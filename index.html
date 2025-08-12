@@ -1,152 +1,540 @@
+
+
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Planning Familial</title>
-
-  <!-- 🔹 Anti-cache permanent -->
-  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
-  <meta http-equiv="Pragma" content="no-cache" />
-  <meta http-equiv="Expires" content="0" />
-
-  <style>
-    /* Ton CSS d'origine conservé ici (repris de ton fichier) */
-    body { font-family: Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 0; }
-    header { background-color: #4CAF50; color: white; padding: 10px; text-align: center; }
-    main { padding: 20px; }
-    .day-column { background: white; border-radius: 8px; padding: 10px; margin-bottom: 20px; }
-    .day-column h2 { margin-top: 0; }
-    .task { background: #f9f9f9; padding: 6px; margin: 4px 0; border-radius: 4px; cursor: grab; }
-    .task.dragging { opacity: 0.5; }
-    input[type="text"] { width: calc(100% - 12px); padding: 5px; }
-    button { margin-top: 5px; background: #4CAF50; color: white; border: none; padding: 6px 12px; cursor: pointer; border-radius: 4px; }
-    button:hover { background: #45a049; }
-    .container { display: flex; flex-wrap: wrap; gap: 20px; }
-    @media (max-width: 768px) {
-      .container { flex-direction: column; }
-    }
-  </style>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Planning de garde - Grand-père</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh; padding: 20px;
+        }
+        .container { max-width: 1400px; margin: 0 auto; background: #fff; border-radius: 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.2); overflow: hidden; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #fff; padding: 30px; text-align: center; }
+        .header h1 { font-size: 2.5em; margin-bottom: 10px; }
+        .week-selector { margin: 20px 0; display: flex; justify-content: center; align-items: center; gap: 20px; }
+        .week-selector button { background: rgba(255,255,255,0.2); border: 2px solid #fff; color: #fff; padding: 10px 20px; border-radius: 25px; cursor: pointer; font-size: 1.1em; transition: all 0.3s; }
+        .week-selector button:hover { background: rgba(255,255,255,0.3); transform: scale(1.05); }
+        .week-display { font-size: 1.2em; font-weight: bold; min-width: 200px; text-align: center; }
+        .content { padding: 30px; }
+        .controls { margin-bottom: 30px; display: flex; gap: 15px; flex-wrap: wrap; justify-content: center; }
+        .btn { padding: 12px 25px; border: none; border-radius: 25px; cursor: pointer; font-size: 1em; font-weight: bold; transition: all 0.3s; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        .btn-primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #fff; }
+        .btn-secondary { background: #f0f0f0; color: #333; }
+        .btn-success { background: linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%); color: #2c3e50; }
+        .btn:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.15); }
+        .table-container { overflow-x: auto; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); }
+        table { width: 100%; border-collapse: separate; border-spacing: 0; min-width: 800px; }
+        th { background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); padding: 15px; text-align: center; font-weight: bold; color: #333; position: sticky; top: 0; z-index: 10; }
+        th:first-child { border-top-left-radius: 15px; }
+        th:last-child { border-top-right-radius: 15px; }
+        td { padding: 12px; text-align: center; border: 1px solid #e0e0e0; background: #fff; position: relative; vertical-align: top; }
+        .time-slot { background: #f8f9fa; font-weight: bold; color: #495057; }
+        .slot { min-height: 120px; cursor: pointer; transition: all 0.3s; position: relative; padding: 10px; }
+        .slot:hover { background: #f0f4ff; }
+        .assignment { background: linear-gradient(135deg, #ffeaa7 0%, #fdcb6e 100%); color: #2d3436; padding: 8px; border-radius: 10px; margin: 5px 2px; display: block; animation: slideIn 0.3s ease-out; position: relative; box-shadow: 0 2px 10px rgba(0,0,0,0.1); text-align: left; }
+        .assignment.task-courses { background: linear-gradient(135deg, #fab1a0 0%, #ff7675 100%); }
+        .assignment.task-repas { background: linear-gradient(135deg, #74b9ff 0%, #0984e3 100%); color: #fff; }
+        .assignment.task-menage { background: linear-gradient(135deg, #a29bfe 0%, #6c5ce7 100%); color: #fff; }
+        .assignment.task-soins { background: linear-gradient(135deg, #55efc4 0%, #00b894 100%); color: #fff; }
+        .assignment.task-compagnie { background: linear-gradient(135deg, #fd79a8 0%, #e84393 100%); color: #fff; }
+        .assignment.task-administratif { background: linear-gradient(135deg, #fdcb6e 0%, #f39c12 100%); }
+        .assignment.task-transport { background: linear-gradient(135deg, #81ecec 0%, #00cec9 100%); }
+        .assignment.task-autre { background: linear-gradient(135deg, #dfe6e9 0%, #b2bec3 100%); }
+        .assignment-person { font-weight: bold; font-size: 0.95em; }
+        .assignment-task { font-size: 0.85em; opacity: 0.9; margin-top: 2px; }
+        @keyframes slideIn { from { opacity: 0; transform: translateY(-10px);} to { opacity: 1; transform: translateY(0);} }
+        .side-panel { position: fixed; right: -400px; top: 0; width: 400px; height: 100vh; background: #fff; box-shadow: -5px 0 20px rgba(0,0,0,0.1); transition: right 0.3s; z-index: 1000; overflow-y: auto; }
+        .side-panel.active { right: 0; }
+        .panel-header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #fff; padding: 20px; position: sticky; top: 0; z-index: 11; }
+        .panel-content { padding: 20px; }
+        .panel-section { margin-bottom: 30px; }
+        .panel-section h4 { margin-bottom: 15px; color: #333; border-bottom: 2px solid #e0e0e0; padding-bottom: 10px; }
+        .person-item, .task-item { padding: 12px; margin: 10px 0; background: #f8f9fa; border-radius: 10px; cursor: move; transition: all 0.3s; border: 2px solid transparent; display: flex; align-items: center; justify-content: space-between; }
+        .person-item:hover, .task-item:hover { transform: translateX(-5px); box-shadow: 0 5px 15px rgba(0,0,0,0.1); border-color: #667eea; }
+        .task-item { background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); }
+        .task-item.task-courses { border-left: 4px solid #ff7675; }
+        .task-item.task-repas { border-left: 4px solid #0984e3; }
+        .task-item.task-menage { border-left: 4px solid #6c5ce7; }
+        .task-item.task-soins { border-left: 4px solid #00b894; }
+        .task-item.task-compagnie { border-left: 4px solid #e84393; }
+        .task-item.task-administratif { border-left: 4px solid #f39c12; }
+        .task-item.task-transport { border-left: 4px solid #00cec9; }
+        .task-item.task-autre { border-left: 4px solid #b2bec3; }
+        .dragging { opacity: 0.5; transform: scale(0.95); }
+        .add-form { margin-top: 20px; padding-top: 20px; border-top: 2px solid #e0e0e0; }
+        .add-form input, .add-form select { width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 10px; font-size: 1em; margin-bottom: 10px; transition: border-color 0.3s; }
+        .add-form input:focus, .add-form select:focus { outline: none; border-color: #667eea; }
+        .slot.drag-over { background: #e8f5e9; border: 2px dashed #4caf50; }
+        .close-btn { position: absolute; top: 20px; right: 20px; background: #fff; color: #667eea; border: none; width: 30px; height: 30px; border-radius: 50%; cursor: pointer; font-size: 1.2em; transition: all 0.3s; }
+        .close-btn:hover { background: #f0f0f0; transform: rotate(90deg); }
+        .remove-btn { color: #dc3545; cursor: pointer; font-weight: bold; padding: 2px 6px; border-radius: 4px; transition: all 0.3s; float: right; }
+        .remove-btn:hover { background: rgba(220, 53, 69, 0.1); }
+        .delete-btn { color: #dc3545; cursor: pointer; padding: 2px 8px; background: rgba(220, 53, 69, 0.1); border-radius: 5px; transition: all 0.3s; }
+        .delete-btn:hover { background: rgba(220, 53, 69, 0.2); }
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 2000; align-items: center; justify-content: center; }
+        .modal.active { display: flex; }
+        .modal-content { background: #fff; padding: 30px; border-radius: 20px; max-width: 500px; width: 90%; box-shadow: 0 20px 60px rgba(0,0,0,0.3); animation: modalSlideIn 0.3s ease-out; }
+        @keyframes modalSlideIn { from { transform: translateY(-50px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        .modal-header { margin-bottom: 20px; }
+        .modal-header h3 { color: #333; }
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 5px; color: #666; font-weight: bold; }
+        .form-group input, .form-group select { width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 10px; font-size: 1em; }
+        .modal-buttons { display: flex; gap: 10px; margin-top: 20px; justify-content: flex-end; }
+        .legend { margin-top: 30px; padding: 20px; background: #f8f9fa; border-radius: 15px; }
+        .legend h4 { margin-bottom: 15px; color: #333; }
+        .legend-items { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+        .legend-item { display: flex; align-items: center; gap: 10px; }
+        .legend-color { width: 30px; height: 20px; border-radius: 5px; }
+        @media (max-width: 768px) {
+            .header h1 { font-size: 1.8em; }
+            .controls { flex-direction: column; align-items: stretch; }
+            .side-panel { width: 100%; right: -100%; }
+            .modal-content { padding: 20px; }
+        }
+    </style>
 </head>
 <body>
-  <header>
-    <h1>Planning Familial Partagé</h1>
-  </header>
-  <main>
-    <div class="container" id="planningContainer">
-      <!-- Colonnes générées en JS -->
+    <div class="container">
+        <div class="header">
+            <h1>📅 Planning de garde et tâches</h1>
+            <div class="week-selector">
+                <button onclick="changeWeek(-1)">← Semaine précédente</button>
+                <div class="week-display" id="weekDisplay"></div>
+                <button onclick="changeWeek(1)">Semaine suivante →</button>
+            </div>
+        </div>
+        <div class="content">
+            <div class="controls">
+                <button class="btn btn-primary" onclick="togglePanel()">👥 Personnes et Tâches</button>
+                <button class="btn btn-success" onclick="openAssignmentModal()">➕ Ajouter une attribution</button>
+                <button class="btn btn-secondary" onclick="clearWeek()">🗑️ Effacer la semaine</button>
+                <button class="btn btn-secondary" onclick="exportPlanning()">📥 Exporter le planning</button>
+            </div>
+            <div class="table-container">
+                <table id="planningTable">
+                    <thead>
+                        <tr id="headerRow">
+                            <th>Horaire</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody">
+                        <tr id="morningRow">
+                            <td class="time-slot">Matin<br>(8h-12h)</td>
+                        </tr>
+                        <tr id="afternoonRow">
+                            <td class="time-slot">Après-midi<br>(14h-18h)</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="legend">
+                <h4>📌 Légende des tâches</h4>
+                <div class="legend-items">
+                    <div class="legend-item"><div class="legend-color" style="background: linear-gradient(135deg, #fab1a0 0%, #ff7675 100%);"></div><span>Courses</span></div>
+                    <div class="legend-item"><div class="legend-color" style="background: linear-gradient(135deg, #74b9ff 0%, #0984e3 100%);"></div><span>Repas</span></div>
+                    <div class="legend-item"><div class="legend-color" style="background: linear-gradient(135deg, #a29bfe 0%, #6c5ce7 100%);"></div><span>Ménage</span></div>
+                    <div class="legend-item"><div class="legend-color" style="background: linear-gradient(135deg, #55efc4 0%, #00b894 100%);"></div><span>Soins</span></div>
+                    <div class="legend-item"><div class="legend-color" style="background: linear-gradient(135deg, #fd79a8 0%, #e84393 100%);"></div><span>Compagnie</span></div>
+                    <div class="legend-item"><div class="legend-color" style="background: linear-gradient(135deg, #fdcb6e 0%, #f39c12 100%);"></div><span>Administratif</span></div>
+                    <div class="legend-item"><div class="legend-color" style="background: linear-gradient(135deg, #81ecec 0%, #00cec9 100%);"></div><span>Transport</span></div>
+                    <div class="legend-item"><div class="legend-color" style="background: linear-gradient(135deg, #dfe6e9 0%, #b2bec3 100%);"></div><span>Autre</span></div>
+                </div>
+            </div>
+        </div>
     </div>
-  </main>
 
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js?v=20250813";
-    import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js?v=20250813";
+    <div class="side-panel" id="sidePanel">
+        <button class="close-btn" onclick="togglePanel()">×</button>
+        <div class="panel-header"><h3>Gestion des personnes et tâches</h3></div>
+        <div class="panel-content">
+            <div class="panel-section">
+                <h4>👥 Personnes disponibles</h4>
+                <div id="peopleContainer"></div>
+                <div class="add-form">
+                    <input type="text" id="newPersonName" placeholder="Nom de la personne" onkeypress="if(event.key==='Enter') addPerson()" />
+                    <button class="btn btn-primary" onclick="addPerson()" style="width: 100%;">➕ Ajouter une personne</button>
+                </div>
+            </div>
+            <div class="panel-section">
+                <h4>📋 Tâches disponibles</h4>
+                <div id="tasksContainer"></div>
+                <div class="add-form">
+                    <input type="text" id="newTaskName" placeholder="Nouvelle tâche" onkeypress="if(event.key==='Enter') addTask()" />
+                    <select id="newTaskCategory">
+                        <option value="courses">🛒 Courses</option>
+                        <option value="repas">🍽️ Repas</option>
+                        <option value="menage">🧹 Ménage</option>
+                        <option value="soins">💊 Soins</option>
+                        <option value="compagnie">👥 Compagnie</option>
+                        <option value="administratif">📄 Administratif</option>
+                        <option value="transport">🚗 Transport</option>
+                        <option value="autre">📌 Autre</option>
+                    </select>
+                    <button class="btn btn-primary" onclick="addTask()" style="width: 100%;">➕ Ajouter une tâche</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
-    // --- Config Firebase ---
-    const firebaseConfig = {
-      apiKey: "AIzaSyA2MjMWssWKh74NIru2wAvR3rPZ6eFH854",
-      authDomain: "plnning-familial.firebaseapp.com",
-      projectId: "plnning-familial",
-      storageBucket: "plnning-familial.firebasestorage.app",
-      messagingSenderId: "97302700143",
-      appId: "1:97302700143:web:f50693e7cd5ef514a4ed9a"
-    };
+    <div class="modal" id="assignmentModal">
+        <div class="modal-content">
+            <div class="modal-header"><h3>➕ Nouvelle attribution</h3></div>
+            <div class="form-group">
+                <label>Jour de la semaine</label>
+                <select id="modalDay">
+                    <option value="Lundi">Lundi</option>
+                    <option value="Mardi">Mardi</option>
+                    <option value="Mercredi">Mercredi</option>
+                    <option value="Jeudi">Jeudi</option>
+                    <option value="Vendredi">Vendredi</option>
+                    <option value="Samedi">Samedi</option>
+                    <option value="Dimanche">Dimanche</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Créneau horaire</label>
+                <select id="modalPeriod">
+                    <option value="morning">Matin (8h-12h)</option>
+                    <option value="afternoon">Après-midi (14h-18h)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Personne</label>
+                <select id="modalPerson"></select>
+            </div>
+            <div class="form-group">
+                <label>Tâche</label>
+                <select id="modalTask"></select>
+            </div>
+            <div class="modal-buttons">
+                <button class="btn btn-secondary" onclick="closeAssignmentModal()">Annuler</button>
+                <button class="btn btn-primary" onclick="saveAssignment()">Ajouter</button>
+            </div>
+        </div>
+    </div>
 
-    const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
-    const docRef = doc(db, "planning", "semaine");
+    <script>
+        // === Données ===
+        let currentWeekOffset = 0;
+        let people = ['Marie', 'Pierre', 'Jean', 'Sophie', 'Paul'];
+        let tasks = [
+            { name: 'Faire les courses', category: 'courses' },
+            { name: 'Préparer le petit-déjeuner', category: 'repas' },
+            { name: 'Préparer le déjeuner', category: 'repas' },
+            { name: 'Préparer le dîner', category: 'repas' },
+            { name: 'Faire le ménage', category: 'menage' },
+            { name: 'Laver le linge', category: 'menage' },
+            { name: 'Donner les médicaments', category: 'soins' },
+            { name: 'Aide à la toilette', category: 'soins' },
+            { name: 'Tenir compagnie', category: 'compagnie' },
+            { name: 'Promenade', category: 'compagnie' },
+            { name: 'Rendez-vous médical', category: 'transport' },
+            { name: 'Papiers administratifs', category: 'administratif' },
+        ];
+        let planning = {}; // { weekKey: { Jour: { morning: [], afternoon: [] } } }
+        let draggedData = null; // { type: 'person'|'task', payload }
 
-    // --- Variables ---
-    let planningData = {};
-    const jours = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"];
-    const container = document.getElementById("planningContainer");
-
-    // --- Rendu ---
-    function renderPlanning() {
-      container.innerHTML = "";
-      jours.forEach(jour => {
-        const col = document.createElement("div");
-        col.className = "day-column";
-        col.dataset.day = jour;
-
-        const title = document.createElement("h2");
-        title.textContent = jour;
-        col.appendChild(title);
-
-        const tasks = planningData[jour] || [];
-        tasks.forEach((tache, index) => {
-          const taskEl = document.createElement("div");
-          taskEl.className = "task";
-          taskEl.textContent = tache;
-          taskEl.draggable = true;
-          taskEl.dataset.index = index;
-          taskEl.addEventListener("dragstart", dragStart);
-          col.appendChild(taskEl);
+        // === Initialisation ===
+        document.addEventListener('DOMContentLoaded', () => {
+            initTable();
         });
 
-        const input = document.createElement("input");
-        input.type = "text";
-        input.placeholder = `Ajouter une tâche pour ${jour}`;
-        input.addEventListener("keypress", e => {
-          if (e.key === "Enter" && input.value.trim() !== "") {
-            addTask(jour, input.value.trim());
-            input.value = "";
-          }
-        });
-        col.appendChild(input);
+        function initTable() {
+            const days = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
+            const headerRow = document.getElementById('headerRow');
+            const morningRow = document.getElementById('morningRow');
+            const afternoonRow = document.getElementById('afternoonRow');
 
-        col.addEventListener("dragover", dragOver);
-        col.addEventListener("drop", drop);
+            days.forEach((day) => {
+                const th = document.createElement('th');
+                th.textContent = day;
+                headerRow.appendChild(th);
 
-        container.appendChild(col);
-      });
-    }
+                const morningTd = document.createElement('td');
+                morningTd.className = 'slot';
+                morningTd.dataset.day = day;
+                morningTd.dataset.period = 'morning';
+                morningTd.ondrop = drop;
+                morningTd.ondragover = allowDrop;
+                morningTd.ondragleave = dragLeave;
+                morningRow.appendChild(morningTd);
 
-    // --- Drag & drop ---
-    let draggedTask = null;
-    function dragStart(e) {
-      draggedTask = {
-        day: e.target.parentElement.dataset.day,
-        index: e.target.dataset.index
-      };
-      e.target.classList.add("dragging");
-    }
-    function dragOver(e) { e.preventDefault(); }
-    function drop(e) {
-      e.preventDefault();
-      const targetDay = e.currentTarget.dataset.day;
-      if (draggedTask) {
-        const movedTask = planningData[draggedTask.day].splice(draggedTask.index, 1)[0];
-        if (!planningData[targetDay]) planningData[targetDay] = [];
-        planningData[targetDay].push(movedTask);
-        savePlanning();
-      }
-    }
+                const afternoonTd = document.createElement('td');
+                afternoonTd.className = 'slot';
+                afternoonTd.dataset.day = day;
+                afternoonTd.dataset.period = 'afternoon';
+                afternoonTd.ondrop = drop;
+                afternoonTd.ondragover = allowDrop;
+                afternoonTd.ondragleave = dragLeave;
+                afternoonRow.appendChild(afternoonTd);
+            });
 
-    // --- Ajout tâche ---
-    function addTask(jour, texte) {
-      if (!planningData[jour]) planningData[jour] = [];
-      planningData[jour].push(texte);
-      savePlanning();
-    }
+            loadSavedData();
+            updateWeekDisplay();
+            loadPlanning();
+            updatePeopleList();
+            updateTasksList();
+            refreshModalOptions();
+        }
 
-    // --- Sauvegarde ---
-    async function savePlanning() {
-      await setDoc(docRef, planningData);
-    }
+        // === Semaine ===
+        function getWeekDates() {
+            const today = new Date();
+            const currentDay = today.getDay() || 7; // Lundi=1 ... Dimanche=7
+            const monday = new Date(today);
+            monday.setHours(0, 0, 0, 0);
+            monday.setDate(today.getDate() - currentDay + 1 + currentWeekOffset * 7);
+            const sunday = new Date(monday);
+            sunday.setDate(monday.getDate() + 6);
+            return { start: monday, end: sunday, key: `${monday.getFullYear()}-${monday.getMonth()}-${monday.getDate()}` };
+        }
 
-    // --- Synchro temps réel ---
-    onSnapshot(docRef, docSnap => {
-      if (docSnap.exists()) {
-        planningData = docSnap.data();
-      } else {
-        planningData = {};
-      }
-      renderPlanning();
-    });
+        function updateWeekDisplay() {
+            const dates = getWeekDates();
+            const options = { day: 'numeric', month: 'short' };
+            const startStr = dates.start.toLocaleDateString('fr-FR', options);
+            const endStr = dates.end.toLocaleDateString('fr-FR', options);
+            document.getElementById('weekDisplay').textContent = `${startStr} - ${endStr}`;
+        }
 
-    // Initial
-    renderPlanning();
-  </script>
+        function changeWeek(offset) {
+            savePlanning();
+            currentWeekOffset += offset;
+            updateWeekDisplay();
+            loadPlanning();
+        }
+
+        // === Persistance ===
+        function savePlanning() {
+            const weekKey = getWeekDates().key;
+            const weekPlanning = {};
+            document.querySelectorAll('.slot').forEach((slot) => {
+                const day = slot.dataset.day;
+                const period = slot.dataset.period;
+                const assignments = Array.from(slot.querySelectorAll('.assignment')).map((el) => {
+                    const person = el.querySelector('.assignment-person').textContent;
+                    const task = el.querySelector('.assignment-task').textContent;
+                    const category = Array.from(el.classList).find((c) => c.startsWith('task-'))?.replace('task-', '') || 'autre';
+                    return { person, task, category };
+                });
+                if (!weekPlanning[day]) weekPlanning[day] = {};
+                weekPlanning[day][period] = assignments;
+            });
+            planning[weekKey] = weekPlanning;
+            localStorage.setItem('planning', JSON.stringify(planning));
+        }
+
+        function loadPlanning() {
+            const saved = localStorage.getItem('planning');
+            if (saved) planning = JSON.parse(saved);
+            const weekKey = getWeekDates().key;
+            const weekPlanning = planning[weekKey] || {};
+            document.querySelectorAll('.slot').forEach((slot) => {
+                slot.innerHTML = '';
+                const day = slot.dataset.day;
+                const period = slot.dataset.period;
+                if (weekPlanning[day] && weekPlanning[day][period]) {
+                    weekPlanning[day][period].forEach((assignment) => {
+                        addAssignmentToSlot(slot, assignment.person, assignment.task, assignment.category);
+                    });
+                }
+            });
+        }
+
+        function loadSavedData() {
+            const sp = localStorage.getItem('people');
+            if (sp) people = JSON.parse(sp);
+            const st = localStorage.getItem('tasks');
+            if (st) tasks = JSON.parse(st);
+        }
+
+        // === UI panneaux ===
+        function togglePanel() {
+            const panel = document.getElementById('sidePanel');
+            panel.classList.toggle('active');
+        }
+
+        // === People ===
+        function updatePeopleList() {
+            const container = document.getElementById('peopleContainer');
+            container.innerHTML = '';
+            people.forEach((person) => {
+                const div = document.createElement('div');
+                div.className = 'person-item';
+                div.innerHTML = `<span>${person}</span><span class="delete-btn" onclick="deletePerson('${person.replace(/'/g, "\\'")}')">×</span>`;
+                div.draggable = true;
+                div.ondragstart = (e) => dragStart(e, 'person', person);
+                div.ondragend = dragEnd;
+                container.appendChild(div);
+            });
+            refreshModalOptions();
+            localStorage.setItem('people', JSON.stringify(people));
+        }
+
+        function addPerson() {
+            const input = document.getElementById('newPersonName');
+            const name = input.value.trim();
+            if (name && !people.includes(name)) {
+                people.push(name);
+                input.value = '';
+                updatePeopleList();
+            }
+        }
+
+        function deletePerson(name) {
+            people = people.filter((p) => p !== name);
+            updatePeopleList();
+        }
+
+        // === Tasks ===
+        function updateTasksList() {
+            const container = document.getElementById('tasksContainer');
+            container.innerHTML = '';
+            tasks.forEach((task) => {
+                const div = document.createElement('div');
+                div.className = `task-item task-${task.category}`;
+                div.innerHTML = `<span>${task.name}</span><span class=\"delete-btn\" onclick=\"deleteTask('${task.name.replace(/'/g, "\\'")}')\">×</span>`;
+                div.draggable = true;
+                div.ondragstart = (e) => dragStart(e, 'task', task);
+                div.ondragend = dragEnd;
+                container.appendChild(div);
+            });
+            refreshModalOptions();
+            localStorage.setItem('tasks', JSON.stringify(tasks));
+        }
+
+        function addTask() {
+            const nameInput = document.getElementById('newTaskName');
+            const catSelect = document.getElementById('newTaskCategory');
+            const name = nameInput.value.trim();
+            const category = catSelect.value;
+            if (name && !tasks.some((t) => t.name === name)) {
+                tasks.push({ name, category });
+                nameInput.value = '';
+                updateTasksList();
+            }
+        }
+
+        function deleteTask(name) {
+            tasks = tasks.filter((t) => t.name !== name);
+            updateTasksList();
+        }
+
+        function findTaskCategory(taskName) {
+            return tasks.find((t) => t.name === taskName)?.category || 'autre';
+            }
+
+        // === Drag & Drop ===
+        function dragStart(e, type, payload) {
+            draggedData = { type, payload };
+            e.dataTransfer.effectAllowed = 'move';
+            (e.target.classList && e.target.classList.add('dragging'));
+        }
+
+        function dragEnd(e) {
+            if (e.target.classList) e.target.classList.remove('dragging');
+            draggedData = null;
+        }
+
+        function allowDrop(e) { e.preventDefault(); e.currentTarget.classList.add('drag-over'); }
+        function dragLeave(e) { e.currentTarget.classList.remove('drag-over'); }
+
+        function drop(e) {
+            e.preventDefault();
+            e.currentTarget.classList.remove('drag-over');
+            if (!draggedData) return;
+            const slot = e.currentTarget;
+            const { day, period } = slot.dataset;
+            if (draggedData.type === 'person') {
+                // On demande la tâche à associer
+                openAssignmentModal(day, period, draggedData.payload, null);
+            } else if (draggedData.type === 'task') {
+                openAssignmentModal(day, period, null, draggedData.payload.name);
+            }
+        }
+
+        // === Attributions ===
+        function addAssignmentToSlot(slot, person, task, category) {
+            const wrap = document.createElement('div');
+            wrap.className = `assignment task-${category}`;
+            wrap.innerHTML = `
+                <span class="remove-btn" title="Supprimer" onclick="this.parentElement.remove(); savePlanning();">×</span>
+                <div class="assignment-person">${person}</div>
+                <div class="assignment-task">${task}</div>
+            `;
+            slot.appendChild(wrap);
+        }
+
+        function openAssignmentModal(day = null, period = 'morning', presetPerson = null, presetTaskName = null) {
+            refreshModalOptions();
+            const modal = document.getElementById('assignmentModal');
+            const daySel = document.getElementById('modalDay');
+            const periodSel = document.getElementById('modalPeriod');
+            const personSel = document.getElementById('modalPerson');
+            const taskSel = document.getElementById('modalTask');
+
+            if (day) daySel.value = day; // sinon garder la valeur courante
+            periodSel.value = period;
+
+            if (presetPerson && people.includes(presetPerson)) personSel.value = presetPerson;
+            if (presetTaskName && tasks.some((t) => t.name === presetTaskName)) taskSel.value = presetTaskName;
+
+            modal.classList.add('active');
+        }
+
+        function closeAssignmentModal() {
+            const modal = document.getElementById('assignmentModal');
+            modal.classList.remove('active');
+        }
+
+        function refreshModalOptions() {
+            const personSel = document.getElementById('modalPerson');
+            const taskSel = document.getElementById('modalTask');
+            if (!personSel || !taskSel) return;
+            personSel.innerHTML = people.map((p) => `<option value="${p}">${p}</option>`).join('');
+            taskSel.innerHTML = tasks.map((t) => `<option value="${t.name}">${t.name}</option>`).join('');
+        }
+
+        function saveAssignment() {
+            const day = document.getElementById('modalDay').value;
+            const period = document.getElementById('modalPeriod').value;
+            const person = document.getElementById('modalPerson').value;
+            const taskName = document.getElementById('modalTask').value;
+            const category = findTaskCategory(taskName);
+            const slot = document.querySelector(`.slot[data-day="${day}"][data-period="${period}"]`);
+            if (slot) {
+                addAssignmentToSlot(slot, person, taskName, category);
+                savePlanning();
+            }
+            closeAssignmentModal();
+        }
+
+        // === Outils ===
+        function clearWeek() {
+            if (!confirm('Effacer toutes les attributions de la semaine affichée ?')) return;
+            document.querySelectorAll('.slot').forEach((slot) => (slot.innerHTML = ''));
+            savePlanning();
+        }
+
+        function exportPlanning() {
+            savePlanning();
+            const weekKey = getWeekDates().key;
+            const data = planning[weekKey] || {};
+            const blob = new Blob([JSON.stringify({ weekKey, data }, null, 2)], { type: 'application/json' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `planning-${weekKey}.json`;
+            document.body.appendChild(a);
+            a.click();
+            URL.revokeObjectURL(a.href);
+            a.remove();
+        }
+    </script>
 </body>
 </html>
