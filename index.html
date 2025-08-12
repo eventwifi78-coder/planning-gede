@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Planning Partagé</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Planning Familial</title>
 
   <!-- 🔹 Anti-cache permanent -->
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
@@ -11,26 +11,32 @@
   <meta http-equiv="Expires" content="0" />
 
   <style>
-    /* Ton CSS original ici (repris du fichier Claude) */
-    body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
-    header { background: #4CAF50; color: white; padding: 10px; text-align: center; }
-    .container { display: flex; gap: 20px; padding: 20px; }
-    .column { flex: 1; background: #f9f9f9; border-radius: 8px; padding: 10px; }
-    .task { background: white; border: 1px solid #ccc; margin: 5px 0; padding: 8px; border-radius: 4px; cursor: grab; }
-    .task:active { cursor: grabbing; }
-    .add-btn { background: #4CAF50; color: white; border: none; padding: 8px 12px; cursor: pointer; margin-top: 10px; border-radius: 4px; }
-    .add-btn:hover { background: #45a049; }
-    input[type="text"] { width: 100%; padding: 6px; margin-top: 4px; }
+    /* Ton CSS d'origine conservé ici (repris de ton fichier) */
+    body { font-family: Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 0; }
+    header { background-color: #4CAF50; color: white; padding: 10px; text-align: center; }
+    main { padding: 20px; }
+    .day-column { background: white; border-radius: 8px; padding: 10px; margin-bottom: 20px; }
+    .day-column h2 { margin-top: 0; }
+    .task { background: #f9f9f9; padding: 6px; margin: 4px 0; border-radius: 4px; cursor: grab; }
+    .task.dragging { opacity: 0.5; }
+    input[type="text"] { width: calc(100% - 12px); padding: 5px; }
+    button { margin-top: 5px; background: #4CAF50; color: white; border: none; padding: 6px 12px; cursor: pointer; border-radius: 4px; }
+    button:hover { background: #45a049; }
+    .container { display: flex; flex-wrap: wrap; gap: 20px; }
+    @media (max-width: 768px) {
+      .container { flex-direction: column; }
+    }
   </style>
 </head>
 <body>
   <header>
-    <h1>Planning Partagé (Firebase)</h1>
+    <h1>Planning Familial Partagé</h1>
   </header>
-
-  <div class="container" id="planning">
-    <!-- Colonnes générées par JS -->
-  </div>
+  <main>
+    <div class="container" id="planningContainer">
+      <!-- Colonnes générées en JS -->
+    </div>
+  </main>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js?v=20250813";
@@ -50,29 +56,28 @@
     const db = getFirestore(app);
     const docRef = doc(db, "planning", "semaine");
 
-    // --- Données en mémoire ---
+    // --- Variables ---
     let planningData = {};
+    const jours = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"];
+    const container = document.getElementById("planningContainer");
 
-    // --- Initialisation colonnes ---
-    const categories = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"];
-    const planningContainer = document.getElementById("planning");
-
+    // --- Rendu ---
     function renderPlanning() {
-      planningContainer.innerHTML = "";
-      categories.forEach(day => {
+      container.innerHTML = "";
+      jours.forEach(jour => {
         const col = document.createElement("div");
-        col.className = "column";
-        col.dataset.day = day;
+        col.className = "day-column";
+        col.dataset.day = jour;
 
         const title = document.createElement("h2");
-        title.textContent = day;
+        title.textContent = jour;
         col.appendChild(title);
 
-        const tasks = planningData[day] || [];
-        tasks.forEach((task, index) => {
+        const tasks = planningData[jour] || [];
+        tasks.forEach((tache, index) => {
           const taskEl = document.createElement("div");
           taskEl.className = "task";
-          taskEl.textContent = task;
+          taskEl.textContent = tache;
           taskEl.draggable = true;
           taskEl.dataset.index = index;
           taskEl.addEventListener("dragstart", dragStart);
@@ -81,10 +86,10 @@
 
         const input = document.createElement("input");
         input.type = "text";
-        input.placeholder = `Ajouter une tâche pour ${day}`;
-        input.addEventListener("keypress", (e) => {
+        input.placeholder = `Ajouter une tâche pour ${jour}`;
+        input.addEventListener("keypress", e => {
           if (e.key === "Enter" && input.value.trim() !== "") {
-            addTask(day, input.value.trim());
+            addTask(jour, input.value.trim());
             input.value = "";
           }
         });
@@ -93,46 +98,45 @@
         col.addEventListener("dragover", dragOver);
         col.addEventListener("drop", drop);
 
-        planningContainer.appendChild(col);
+        container.appendChild(col);
       });
     }
 
     // --- Drag & drop ---
     let draggedTask = null;
     function dragStart(e) {
-      draggedTask = { 
+      draggedTask = {
         day: e.target.parentElement.dataset.day,
         index: e.target.dataset.index
       };
+      e.target.classList.add("dragging");
     }
-    function dragOver(e) {
-      e.preventDefault();
-    }
+    function dragOver(e) { e.preventDefault(); }
     function drop(e) {
       e.preventDefault();
       const targetDay = e.currentTarget.dataset.day;
       if (draggedTask) {
-        const taskText = planningData[draggedTask.day].splice(draggedTask.index, 1)[0];
+        const movedTask = planningData[draggedTask.day].splice(draggedTask.index, 1)[0];
         if (!planningData[targetDay]) planningData[targetDay] = [];
-        planningData[targetDay].push(taskText);
+        planningData[targetDay].push(movedTask);
         savePlanning();
       }
     }
 
     // --- Ajout tâche ---
-    function addTask(day, taskText) {
-      if (!planningData[day]) planningData[day] = [];
-      planningData[day].push(taskText);
+    function addTask(jour, texte) {
+      if (!planningData[jour]) planningData[jour] = [];
+      planningData[jour].push(texte);
       savePlanning();
     }
 
-    // --- Sauvegarde Firebase ---
+    // --- Sauvegarde ---
     async function savePlanning() {
       await setDoc(docRef, planningData);
     }
 
-    // --- Écoute Firebase ---
-    onSnapshot(docRef, (docSnap) => {
+    // --- Synchro temps réel ---
+    onSnapshot(docRef, docSnap => {
       if (docSnap.exists()) {
         planningData = docSnap.data();
       } else {
@@ -141,7 +145,7 @@
       renderPlanning();
     });
 
-    // Initialisation
+    // Initial
     renderPlanning();
   </script>
 </body>
