@@ -3,20 +3,41 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Test Synchro Firebase</title>
+  <title>Planning Partagé</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    h1 { text-align: center; }
+    table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
+    th { background-color: #f2f2f2; }
+    input { width: 90%; padding: 4px; }
+  </style>
 </head>
 <body>
-  <h1>Test de synchro Firebase</h1>
-  <p>Tout le monde voit la même valeur ci-dessous :</p>
-  <input id="sharedInput" type="text" placeholder="Tape quelque chose..."/>
-  <p>Valeur actuelle : <span id="sharedValue">...</span></p>
+  <h1>Planning Partagé (Firebase)</h1>
+  <table id="planningTable">
+    <thead>
+      <tr>
+        <th>Jour</th>
+        <th>Tâches</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>Lundi</td><td><input data-day="Lundi"></td></tr>
+      <tr><td>Mardi</td><td><input data-day="Mardi"></td></tr>
+      <tr><td>Mercredi</td><td><input data-day="Mercredi"></td></tr>
+      <tr><td>Jeudi</td><td><input data-day="Jeudi"></td></tr>
+      <tr><td>Vendredi</td><td><input data-day="Vendredi"></td></tr>
+      <tr><td>Samedi</td><td><input data-day="Samedi"></td></tr>
+      <tr><td>Dimanche</td><td><input data-day="Dimanche"></td></tr>
+    </tbody>
+  </table>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
-    import { getFirestore, doc, setDoc, onSnapshot } 
-      from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
+    import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
 
-    // --- Ta config Firebase ---
+    // --- Config Firebase ---
     const firebaseConfig = {
       apiKey: "AIzaSyA2MjMWssWKh74NIru2wAvR3rPZ6eFH854",
       authDomain: "plnning-familial.firebaseapp.com",
@@ -26,28 +47,32 @@
       appId: "1:97302700143:web:f50693e7cd5ef514a4ed9a"
     };
 
-    // --- Init Firebase + Firestore ---
+    // Init Firebase
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
-    const docRef = doc(db, "testCollection", "sharedDoc");
+    const docRef = doc(db, "planning", "semaine");
 
-    // --- Écoute en temps réel ---
-    const sharedValueEl = document.getElementById("sharedValue");
-    const sharedInput = document.getElementById("sharedInput");
+    const inputs = document.querySelectorAll("input[data-day]");
 
+    // Écoute en temps réel
     onSnapshot(docRef, (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
-        sharedValueEl.textContent = data.text || "";
-        if (sharedInput.value !== data.text) {
-          sharedInput.value = data.text || "";
-        }
+        inputs.forEach(input => {
+          input.value = data[input.dataset.day] || "";
+        });
       }
     });
 
-    // --- Sauvegarde à chaque frappe ---
-    sharedInput.addEventListener("input", async () => {
-      await setDoc(docRef, { text: sharedInput.value });
+    // Sauvegarde à chaque frappe
+    inputs.forEach(input => {
+      input.addEventListener("input", async () => {
+        const newData = {};
+        inputs.forEach(i => {
+          newData[i.dataset.day] = i.value;
+        });
+        await setDoc(docRef, newData);
+      });
     });
   </script>
 </body>
