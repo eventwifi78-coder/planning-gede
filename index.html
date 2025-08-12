@@ -4,38 +4,37 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Planning Partagé</title>
+
+  <!-- 🔹 Anti-cache permanent -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+
   <style>
-    body { font-family: Arial, sans-serif; margin: 20px; }
-    h1 { text-align: center; }
-    table { border-collapse: collapse; width: 100%; margin-top: 20px; }
-    th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
-    th { background-color: #f2f2f2; }
-    input { width: 90%; padding: 4px; }
+    /* Ton CSS original ici (repris du fichier Claude) */
+    body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
+    header { background: #4CAF50; color: white; padding: 10px; text-align: center; }
+    .container { display: flex; gap: 20px; padding: 20px; }
+    .column { flex: 1; background: #f9f9f9; border-radius: 8px; padding: 10px; }
+    .task { background: white; border: 1px solid #ccc; margin: 5px 0; padding: 8px; border-radius: 4px; cursor: grab; }
+    .task:active { cursor: grabbing; }
+    .add-btn { background: #4CAF50; color: white; border: none; padding: 8px 12px; cursor: pointer; margin-top: 10px; border-radius: 4px; }
+    .add-btn:hover { background: #45a049; }
+    input[type="text"] { width: 100%; padding: 6px; margin-top: 4px; }
   </style>
 </head>
 <body>
-  <h1>Planning Partagé (Firebase)</h1>
-  <table id="planningTable">
-    <thead>
-      <tr>
-        <th>Jour</th>
-        <th>Tâches</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr><td>Lundi</td><td><input data-day="Lundi"></td></tr>
-      <tr><td>Mardi</td><td><input data-day="Mardi"></td></tr>
-      <tr><td>Mercredi</td><td><input data-day="Mercredi"></td></tr>
-      <tr><td>Jeudi</td><td><input data-day="Jeudi"></td></tr>
-      <tr><td>Vendredi</td><td><input data-day="Vendredi"></td></tr>
-      <tr><td>Samedi</td><td><input data-day="Samedi"></td></tr>
-      <tr><td>Dimanche</td><td><input data-day="Dimanche"></td></tr>
-    </tbody>
-  </table>
+  <header>
+    <h1>Planning Partagé (Firebase)</h1>
+  </header>
+
+  <div class="container" id="planning">
+    <!-- Colonnes générées par JS -->
+  </div>
 
   <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
-    import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js?v=20250813";
+    import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js?v=20250813";
 
     // --- Config Firebase ---
     const firebaseConfig = {
@@ -47,33 +46,103 @@
       appId: "1:97302700143:web:f50693e7cd5ef514a4ed9a"
     };
 
-    // Init Firebase
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
     const docRef = doc(db, "planning", "semaine");
 
-    const inputs = document.querySelectorAll("input[data-day]");
+    // --- Données en mémoire ---
+    let planningData = {};
 
-    // Écoute en temps réel
+    // --- Initialisation colonnes ---
+    const categories = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"];
+    const planningContainer = document.getElementById("planning");
+
+    function renderPlanning() {
+      planningContainer.innerHTML = "";
+      categories.forEach(day => {
+        const col = document.createElement("div");
+        col.className = "column";
+        col.dataset.day = day;
+
+        const title = document.createElement("h2");
+        title.textContent = day;
+        col.appendChild(title);
+
+        const tasks = planningData[day] || [];
+        tasks.forEach((task, index) => {
+          const taskEl = document.createElement("div");
+          taskEl.className = "task";
+          taskEl.textContent = task;
+          taskEl.draggable = true;
+          taskEl.dataset.index = index;
+          taskEl.addEventListener("dragstart", dragStart);
+          col.appendChild(taskEl);
+        });
+
+        const input = document.createElement("input");
+        input.type = "text";
+        input.placeholder = `Ajouter une tâche pour ${day}`;
+        input.addEventListener("keypress", (e) => {
+          if (e.key === "Enter" && input.value.trim() !== "") {
+            addTask(day, input.value.trim());
+            input.value = "";
+          }
+        });
+        col.appendChild(input);
+
+        col.addEventListener("dragover", dragOver);
+        col.addEventListener("drop", drop);
+
+        planningContainer.appendChild(col);
+      });
+    }
+
+    // --- Drag & drop ---
+    let draggedTask = null;
+    function dragStart(e) {
+      draggedTask = { 
+        day: e.target.parentElement.dataset.day,
+        index: e.target.dataset.index
+      };
+    }
+    function dragOver(e) {
+      e.preventDefault();
+    }
+    function drop(e) {
+      e.preventDefault();
+      const targetDay = e.currentTarget.dataset.day;
+      if (draggedTask) {
+        const taskText = planningData[draggedTask.day].splice(draggedTask.index, 1)[0];
+        if (!planningData[targetDay]) planningData[targetDay] = [];
+        planningData[targetDay].push(taskText);
+        savePlanning();
+      }
+    }
+
+    // --- Ajout tâche ---
+    function addTask(day, taskText) {
+      if (!planningData[day]) planningData[day] = [];
+      planningData[day].push(taskText);
+      savePlanning();
+    }
+
+    // --- Sauvegarde Firebase ---
+    async function savePlanning() {
+      await setDoc(docRef, planningData);
+    }
+
+    // --- Écoute Firebase ---
     onSnapshot(docRef, (docSnap) => {
       if (docSnap.exists()) {
-        const data = docSnap.data();
-        inputs.forEach(input => {
-          input.value = data[input.dataset.day] || "";
-        });
+        planningData = docSnap.data();
+      } else {
+        planningData = {};
       }
+      renderPlanning();
     });
 
-    // Sauvegarde à chaque frappe
-    inputs.forEach(input => {
-      input.addEventListener("input", async () => {
-        const newData = {};
-        inputs.forEach(i => {
-          newData[i.dataset.day] = i.value;
-        });
-        await setDoc(docRef, newData);
-      });
-    });
+    // Initialisation
+    renderPlanning();
   </script>
 </body>
 </html>
