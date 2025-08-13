@@ -4,6 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Planning de garde - Grand-père</title>
+    <!-- Anti-cache fort -->
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+<meta http-equiv="Pragma" content="no-cache" />
+<meta http-equiv="Expires" content="0" />
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -96,6 +100,23 @@
             .modal-content { padding: 20px; }
         }
     </style>
+    <script>
+  // Désactive un éventuel service worker qui mettrait ton page en cache
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistrations?.().then(rs => rs.forEach(r => r.unregister()));
+  }
+  // Force un cache-busting léger sur les <link rel="stylesheet"> et <script src>
+  document.addEventListener("DOMContentLoaded", function() {
+    document.querySelectorAll("link[rel='stylesheet'], script[src]").forEach(el => {
+      const attr = el.tagName === "LINK" ? "href" : "src";
+      try {
+        const url = new URL(el.getAttribute(attr), location.href);
+        url.searchParams.set('_v', Date.now().toString());
+        el.setAttribute(attr, url.toString());
+      } catch(e) {}
+    });
+  });
+</script>
 </head>
 <body>
     <div class="container">
@@ -156,7 +177,7 @@
                 <div id="peopleContainer"></div>
                 <div class="add-form">
                     <input type="text" id="newPersonName" placeholder="Nom de la personne" onkeypress="if(event.key==='Enter') addPerson()" />
-                    <button class="btn btn-primary" onclick="addPerson" style="width: 100%;" onclick="addPerson()">➕ Ajouter une personne</button>
+                    <button class="btn btn-primary" style="width: 100%;" onclick="addPerson()">➕ Ajouter une personne</button>
                 </div>
             </div>
             <div class="panel-section">
@@ -344,56 +365,101 @@
 
         // === Persistance Firestore (avec fallback local) ===
         async function savePlanning() {
-            const weekKey = getWeekDates().key;
-            const weekPlanning = buildWeekPlanningFromDOM();
-            try {
-                await setDoc(doc(db, "plannings", weekKey), { data: weekPlanning });
-                console.log("Planning sauvegardé sur Firestore ✅");
-            } catch (err) {
-                console.error("Erreur Firestore, stockage local utilisé :", err);
-                localStorage.setItem('planning', JSON.stringify({ [weekKey]: weekPlanning }));
-            }
-        }
+  const weekKey = getWeekDates().key;
+  const weekPlanning = buildWeekPlanningFromDOM();
 
-        async function loadPlanning() {
-            const weekKey = getWeekDates().key;
-            let weekPlanning = null;
+  try {
+    // Ecrit dans Firestore; merge pour éviter d’écraser d’autres champs si tu en ajoutes plus tard
+    await setDoc(doc(db, "plannings", weekKey), { data: weekPlanning }, { merge: true });
+    console.log("✅ Planning sauvegardé sur Firestore:", weekKey);
 
-            try {
-                const docSnap = await getDoc(doc(db, "plannings", weekKey));
-                if (docSnap.exists()) {
-                    weekPlanning = docSnap.data().data;
-                    console.log("Planning chargé depuis Firestore ✅");
-                } else {
-                    console.log("Aucun planning Firestore pour cette semaine, tentative locale…");
-                }
-            } catch (err) {
-                console.error("Erreur Firestore, récupération locale :", err);
-            }
+    // Relire immédiatement depuis Firestore pour vérifier la synchro à l’écran
+    await loadPlanning(/*preferCloud=*/true);
+  } catch (err) {
+    console.error("❌ Erreur Firestore (savePlanning):", err);
 
-            if (!weekPlanning) {
-                const saved = localStorage.getItem('planning');
-                if (saved) {
-                    const parsed = JSON.parse(saved);
-                    weekPlanning = parsed[weekKey] || {};
-                } else {
-                    weekPlanning = {};
-                }
-            }
+    // Gestion ciblée des erreurs
+    const code = err?.code || err?.message || '';
+    if (String(code).includes('permission-denied') || String(code).includes('appCheck') || String(code).includes('AppCheck')) {
+      alert("⚠️ Firestore refuse l'accès (permissions / App Check). Vérifie tes règles Firestore ou désactive App Check pour le test.");
+      // Pas de fallback silencieux ici : c’est un vrai problème de config.
+      return;
+    }
 
-            // Rendu
-            document.querySelectorAll('.slot').forEach((slot) => {
-                slot.innerHTML = '';
-                const day = slot.dataset.day;
-                const period = slot.dataset.period;
-                if (weekPlanning[day] && weekPlanning[day][period]) {
-                    weekPlanning[day][period].forEach((assignment) => {
-                        addAssignmentToSlot(slot, assignment.person, assignment.task, assignment.category);
-                    });
-                }
-            });
-        }
+    if (String(code).includes('unavailable') || String(code).includes('failed-precondition')) {
+      // Offline ou conflit multi-onglets => fallback local minimal
+      localStorage.setItem('planning', JSON.stringify({ [weekKey]: weekPlanning }));
+      alert("ℹ️ Hors-ligne ou conflit multi-onglets. Données sauvegardées en local. Elles seront renvoyées au cloud quand la connexion sera OK.");
+      return;
+    }
 
+    // Autre erreur non prévue
+    alert("❌ Sauvegarde impossible sur Firestore. Ouvre la console pour le détail.");
+  }
+}
+
+async function loadPlanning(preferCloud = false) {
+  const weekKey = getWeekDates().key;
+  let weekPlanning = null;
+  let triedCloud = false;
+
+  // 1) Si on préfère le cloud (après un save par ex.) on tente Firestore d’abord
+  if (preferCloud) {
+    try {
+      const snap = await getDoc(doc(db, "plannings", weekKey));
+      triedCloud = true;
+      if (snap.exists()) {
+        weekPlanning = snap.data()?.data || {};
+        console.log("☁️ Planning chargé depuis Firestore:", weekKey);
+      } else {
+        console.log("ℹ️ Aucun doc Firestore pour cette semaine:", weekKey);
+      }
+    } catch (err) {
+      console.warn("⚠️ Erreur lecture Firestore (preferCloud):", err);
+    }
+  }
+
+  // 2) Sinon, tentons Firestore par défaut (si pas déjà essayé)
+  if (!weekPlanning && !triedCloud) {
+    try {
+      const snap = await getDoc(doc(db, "plannings", weekKey));
+      if (snap.exists()) {
+        weekPlanning = snap.data()?.data || {};
+        console.log("☁️ Planning chargé depuis Firestore:", weekKey);
+      }
+    } catch (err) {
+      console.warn("⚠️ Erreur lecture Firestore:", err);
+      const code = err?.code || err?.message || '';
+      if (String(code).includes('permission-denied') || String(code).includes('appCheck') || String(code).includes('AppCheck')) {
+        alert("⚠️ Firestore refuse l'accès en lecture (permissions / App Check). Ouvre la console pour le détail.");
+      }
+    }
+  }
+
+  // 3) Fallback localStorage UNIQUEMENT si cloud impossible ET qu’on a quelque chose en local
+  if (!weekPlanning) {
+    const saved = localStorage.getItem('planning');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      weekPlanning = parsed[weekKey] || {};
+      console.log("📦 Planning chargé depuis localStorage (fallback):", weekKey);
+    } else {
+      weekPlanning = {};
+    }
+  }
+
+  // 4) Rendu DOM
+  document.querySelectorAll('.slot').forEach((slot) => {
+    slot.innerHTML = '';
+    const day = slot.dataset.day;
+    const period = slot.dataset.period;
+    if (weekPlanning[day] && weekPlanning[day][period]) {
+      weekPlanning[day][period].forEach((assignment) => {
+        addAssignmentToSlot(slot, assignment.person, assignment.task, assignment.category);
+      });
+    }
+  });
+}
         // === Données locales (people/tasks) ===
         function loadSavedData() {
             const sp = localStorage.getItem('people');
