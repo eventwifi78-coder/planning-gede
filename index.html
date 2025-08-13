@@ -255,6 +255,36 @@
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
+        // === Cloud lists (people/tasks) ===
+const listsDocRef = doc(db, "plannings_meta", "lists");
+
+async function saveListsToCloud() {
+  try {
+    await setDoc(listsDocRef, { people, tasks }, { merge: true });
+    console.log("☁️ Listes people/tasks sauvegardées dans Firestore");
+  } catch (err) {
+    console.warn("⚠️ saveListsToCloud échec -> reste local:", err);
+  }
+}
+
+async function loadListsFromCloud() {
+  try {
+    const snap = await getDoc(listsDocRef);
+    if (snap.exists()) {
+      const data = snap.data();
+      if (Array.isArray(data.people)) people = data.people;
+      if (Array.isArray(data.tasks))  tasks  = data.tasks;
+      console.log("☁️ Listes people/tasks chargées depuis Firestore");
+      // Miroir local pour l'offline
+      localStorage.setItem('people', JSON.stringify(people));
+      localStorage.setItem('tasks',  JSON.stringify(tasks));
+      return true;
+    }
+  } catch (err) {
+    console.warn("⚠️ loadListsFromCloud: impossible de lire Firestore:", err);
+  }
+  return false;
+}
 
         // === Données ===
         let currentWeekOffset = 0;
@@ -281,7 +311,7 @@
         });
 
         // === Construction du tableau ===
-        function initTable() {
+        async function initTable() {
             const days = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
             const headerRow = document.getElementById('headerRow');
             const morningRow = document.getElementById('morningRow');
@@ -299,7 +329,7 @@
                 afternoonRow.appendChild(afternoonTd);
             });
 
-            loadSavedData();
+            await loadSavedData();
             updateWeekDisplay();
             loadPlanning();
             updatePeopleList();
@@ -461,12 +491,23 @@ async function loadPlanning(preferCloud = false) {
   });
 }
         // === Données locales (people/tasks) ===
-        function loadSavedData() {
-            const sp = localStorage.getItem('people');
-            if (sp) people = JSON.parse(sp);
-            const st = localStorage.getItem('tasks');
-            if (st) tasks = JSON.parse(st);
-        }
+        async function loadSavedData() {
+  // 1) Cloud d'abord
+  const okCloud = await loadListsFromCloud();
+  if (okCloud) return;
+
+  // 2) Fallback local si le cloud n'a rien/est indispo
+  const sp = localStorage.getItem('people');
+  if (sp) people = JSON.parse(sp);
+
+  const st = localStorage.getItem('tasks');
+  if (st) tasks = JSON.parse(st);
+
+  // 3) Si on avait du local, on remonte au cloud pour rétablir la synchro
+  if (sp || st) {
+    saveListsToCloud().catch(() => {});
+  }
+}
 
         // === UI panneaux ===
         function togglePanel() {
@@ -490,20 +531,22 @@ async function loadPlanning(preferCloud = false) {
             localStorage.setItem('people', JSON.stringify(people));
         }
 
-        function addPerson() {
-            const input = document.getElementById('newPersonName');
-            const name = input.value.trim();
-            if (name && !people.includes(name)) {
-                people.push(name);
-                input.value = '';
-                updatePeopleList();
-            }
-        }
+        async function addPerson() {
+  const input = document.getElementById('newPersonName');
+  const name = input.value.trim();
+  if (name && !people.includes(name)) {
+    people.push(name);
+    input.value = '';
+    updatePeopleList();
+    await saveListsToCloud();
+  }
+}
 
-        function deletePerson(name) {
-            people = people.filter((p) => p !== name);
-            updatePeopleList();
-        }
+async function deletePerson(name) {
+  people = people.filter((p) => p !== name);
+  updatePeopleList();
+  await saveListsToCloud();
+}
 
         // === Tasks ===
         function updateTasksList() {
@@ -522,22 +565,24 @@ async function loadPlanning(preferCloud = false) {
             localStorage.setItem('tasks', JSON.stringify(tasks));
         }
 
-        function addTask() {
-            const nameInput = document.getElementById('newTaskName');
-            const catSelect = document.getElementById('newTaskCategory');
-            const name = nameInput.value.trim();
-            const category = catSelect.value;
-            if (name && !tasks.some((t) => t.name === name)) {
-                tasks.push({ name, category });
-                nameInput.value = '';
-                updateTasksList();
-            }
-        }
+        async function addTask() {
+  const nameInput = document.getElementById('newTaskName');
+  const catSelect = document.getElementById('newTaskCategory');
+  const name = nameInput.value.trim();
+  const category = catSelect.value;
+  if (name && !tasks.some((t) => t.name === name)) {
+    tasks.push({ name, category });
+    nameInput.value = '';
+    updateTasksList();
+    await saveListsToCloud();
+  }
+}
 
-        function deleteTask(name) {
-            tasks = tasks.filter((t) => t.name !== name);
-            updateTasksList();
-        }
+async function deleteTask(name) {
+  tasks = tasks.filter((t) => t.name !== name);
+  updateTasksList();
+  await saveListsToCloud();
+}
 
         function findTaskCategory(taskName) {
             return tasks.find((t) => t.name === taskName)?.category || 'autre';
