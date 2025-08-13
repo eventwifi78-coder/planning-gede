@@ -3,6 +3,30 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+<meta http-equiv="Pragma" content="no-cache" />
+<meta http-equiv="Expires" content="0" />
+    <script>
+  // Ajoute ?v=timestamp une seule fois par session pour bust le cache de la page
+  (function () {
+    try {
+      const KEY = "cache_bust_done";
+      if (!sessionStorage.getItem(KEY)) {
+        const url = new URL(window.location.href);
+        url.searchParams.set("v", Date.now().toString());
+        sessionStorage.setItem(KEY, "1");
+        if (window.location.href !== url.toString()) {
+          window.location.replace(url.toString());
+        }
+      }
+    } catch (e) {}
+  })();
+</script>
+    <script>
+  if ("serviceWorker" in navigator && navigator.serviceWorker.getRegistrations) {
+    navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister()));
+  }
+</script>
     <title>Planning de garde - Grand-père</title>
     <!-- Anti-cache fort -->
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
@@ -241,8 +265,9 @@
     <!-- ==== JS complet (module) ==== -->
     <script type="module">
         // Firebase
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
-        import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+        const bust = `?v=${Date.now()}`; // petit cache-buster
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js" + bust;
+import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js" + bust;
 
         const firebaseConfig = {
             apiKey: "AIzaSyA2MjMWssWKh74NIru2wAvR3rPZ6eFH854",
