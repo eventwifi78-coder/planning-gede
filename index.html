@@ -767,22 +767,83 @@ subscribeToWeekPlanning(); // puis écoute temps réel cloud
         function togglePanel() { document.getElementById('sidePanel').classList.toggle('active'); }
 
         function updateTasksList() {
-            const container = document.getElementById('tasksContainer');
-            container.innerHTML = '';
-            (tasks || []).forEach(t => {
-                const el = document.createElement('div');
-                el.className = `task-item task-${t.category}`;
-                el.innerHTML = `<span>${t.name}</span> <span class="delete-btn">Supprimer</span>`;
-                el.querySelector('.delete-btn').addEventListener('click', () => {
-                    tasks = tasks.filter(x => !(x.name === t.name && x.category === t.category));
-                    localStorage.setItem('tasks', JSON.stringify(tasks));
-                    saveListsToCloud();
-                    updateTasksList();
-                    refreshModalOptions();
-                });
-                container.appendChild(el);
-            });
+  const container = document.getElementById('tasksContainer');
+  container.innerHTML = '';
+
+  (tasks || []).forEach(t => {
+    const el = document.createElement('div');
+    el.className = `task-item task-${t.category}`;
+
+    // Nom ou input
+    const nameBox = document.createElement('div');
+    nameBox.style.display = 'flex';
+    nameBox.style.alignItems = 'center';
+    nameBox.style.gap = '8px';
+    nameBox.style.flex = '1';
+
+    const nameLabel = document.createElement('span');
+    nameLabel.textContent = t.name;
+    nameBox.appendChild(nameLabel);
+
+    const actions = document.createElement('div');
+    actions.className = 'item-actions';
+
+    // Bouton Éditer
+    const editBtn = document.createElement('button');
+    editBtn.className = 'icon-btn';
+    editBtn.title = 'Renommer';
+    editBtn.innerText = '✏️';
+
+    editBtn.addEventListener('click', () => {
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.value = t.name;
+      input.className = 'inline-edit';
+      nameBox.replaceChild(input, nameLabel);
+      input.focus(); input.select();
+
+      const oldName = t.name;
+      const commit = () => {
+        const newVal = input.value.trim();
+        nameBox.replaceChild(nameLabel, input);
+        if (newVal && newVal !== oldName) {
+          renameTask(oldName, newVal);
         }
+      };
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') commit();
+        if (e.key === 'Escape') nameBox.replaceChild(nameLabel, input);
+      });
+      input.addEventListener('blur', commit);
+    });
+
+    // Bouton Supprimer (inchangé, mais on garde)
+    const delBtn = document.createElement('button');
+    delBtn.className = 'delete-btn';
+    delBtn.textContent = 'Supprimer';
+    delBtn.addEventListener('click', () => {
+      // Retirer de la liste
+      tasks = tasks.filter(x => !(x.name === t.name && x.category === t.category));
+      localStorage.setItem('tasks', JSON.stringify(tasks));
+      saveListsToCloud();
+      // Option : supprimer les attributions existantes de cette tâche ? (si tu veux)
+      // document.querySelectorAll('.assignment').forEach(a=>{
+      //   const taskEl = a.querySelector('.assignment-task');
+      //   if (taskEl && taskEl.textContent === t.name) a.remove();
+      // });
+      // savePlanning();
+      updateTasksList();
+      refreshModalOptions();
+    });
+
+    el.appendChild(nameBox);
+    actions.appendChild(editBtn);
+    actions.appendChild(delBtn);
+    el.appendChild(actions);
+
+    container.appendChild(el);
+  });
+}
 
         window.addPerson = function addPerson() {
             const inp = document.getElementById('newPersonName');
