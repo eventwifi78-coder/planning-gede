@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Planning de garde - Grand-père</title>
     <!-- Anti-cache fort -->
-<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
-<meta http-equiv="Pragma" content="no-cache" />
-<meta http-equiv="Expires" content="0" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -22,6 +22,18 @@
         .week-selector button { background: rgba(255,255,255,0.2); border: 2px solid #fff; color: #fff; padding: 10px 20px; border-radius: 25px; cursor: pointer; font-size: 1.1em; transition: all 0.3s; }
         .week-selector button:hover { background: rgba(255,255,255,0.3); transform: scale(1.05); }
         .week-display { font-size: 1.2em; font-weight: bold; min-width: 200px; text-align: center; }
+        .vacation-section {
+            background: linear-gradient(135deg, #ffeaa7 0%, #fdcb6e 100%);
+            padding: 20px;
+            margin: 20px 30px;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        .vacation-section h3 { color: #2d3436; margin-bottom: 15px; font-size: 1.3em; }
+        .vacation-list { display: flex; flex-wrap: wrap; gap: 15px; margin-top: 10px; }
+        .vacation-person { background: white; padding: 10px 20px; border-radius: 25px; display: flex; align-items: center; gap: 10px; box-shadow: 0 3px 10px rgba(0,0,0,0.1); animation: slideIn 0.3s ease-out; }
+        .vacation-person .vacation-icon { font-size: 1.2em; }
+        .no-vacation { color: #636e72; font-style: italic; padding: 10px; }
         .content { padding: 30px; }
         .controls { margin-bottom: 30px; display: flex; gap: 15px; flex-wrap: wrap; justify-content: center; }
         .btn { padding: 12px 25px; border: none; border-radius: 25px; cursor: pointer; font-size: 1em; font-weight: bold; transition: all 0.3s; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
@@ -56,7 +68,14 @@
         .panel-content { padding: 20px; }
         .panel-section { margin-bottom: 30px; }
         .panel-section h4 { margin-bottom: 15px; color: #333; border-bottom: 2px solid #e0e0e0; padding-bottom: 10px; }
-        .person-item, .task-item { padding: 12px; margin: 10px 0; background: #f8f9fa; border-radius: 10px; cursor: move; transition: all 0.3s; border: 2px solid transparent; display: flex; align-items: center; justify-content: space-between; }
+        .person-item, .task-item {
+            padding: 12px; margin: 10px 0; background: #f8f9fa; border-radius: 10px; transition: all 0.3s; border: 2px solid transparent; display: flex; align-items: center; justify-content: space-between;
+        }
+        .person-item.on-vacation { background: linear-gradient(135deg, #ffeaa7 0%, #fdcb6e 100%); opacity: 0.7; }
+        .person-item-content { display: flex; align-items: center; gap: 10px; flex: 1; }
+        .person-item-name { flex: 1; }
+        .vacation-checkbox { width: 20px; height: 20px; cursor: pointer; accent-color: #f39c12; }
+        .vacation-label { font-size: 0.85em; color: #666; cursor: pointer; user-select: none; }
         .person-item:hover, .task-item:hover { transform: translateX(-5px); box-shadow: 0 5px 15px rgba(0,0,0,0.1); border-color: #667eea; }
         .task-item { background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); }
         .task-item.task-courses { border-left: 4px solid #ff7675; }
@@ -98,25 +117,9 @@
             .controls { flex-direction: column; align-items: stretch; }
             .side-panel { width: 100%; right: -100%; }
             .modal-content { padding: 20px; }
+            .vacation-list { flex-direction: column; }
         }
     </style>
-    <script>
-  // Désactive un éventuel service worker qui mettrait ton page en cache
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.getRegistrations?.().then(rs => rs.forEach(r => r.unregister()));
-  }
-  // Force un cache-busting léger sur les <link rel="stylesheet"> et <script src>
-  document.addEventListener("DOMContentLoaded", function() {
-    document.querySelectorAll("link[rel='stylesheet'], script[src]").forEach(el => {
-      const attr = el.tagName === "LINK" ? "href" : "src";
-      try {
-        const url = new URL(el.getAttribute(attr), location.href);
-        url.searchParams.set('_v', Date.now().toString());
-        el.setAttribute(attr, url.toString());
-      } catch(e) {}
-    });
-  });
-</script>
 </head>
 <body>
     <div class="container">
@@ -126,6 +129,12 @@
                 <button onclick="changeWeek(-1)">← Semaine précédente</button>
                 <div class="week-display" id="weekDisplay"></div>
                 <button onclick="changeWeek(1)">Semaine suivante →</button>
+            </div>
+        </div>
+        <div class="vacation-section">
+            <h3>🏖️ Personnes en vacances cette semaine</h3>
+            <div class="vacation-list" id="vacationList">
+                <div class="no-vacation">Aucune personne en vacances cette semaine</div>
             </div>
         </div>
         <div class="content">
@@ -255,36 +264,68 @@
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
-        // === Cloud lists (people/tasks) ===
-const listsDocRef = doc(db, "plannings_meta", "lists");
+        const listsDocRef = doc(db, "plannings_meta", "lists");
 
-async function saveListsToCloud() {
-  try {
-    await setDoc(listsDocRef, { people, tasks }, { merge: true });
-    console.log("☁️ Listes people/tasks sauvegardées dans Firestore");
-  } catch (err) {
-    console.warn("⚠️ saveListsToCloud échec -> reste local:", err);
-  }
-}
+        async function saveListsToCloud() {
+            try {
+                await setDoc(listsDocRef, { people, tasks }, { merge: true });
+                console.log("☁️ Listes people/tasks sauvegardées dans Firestore");
+            } catch (err) {
+                console.warn("⚠️ saveListsToCloud échec -> reste local:", err);
+            }
+        }
 
-async function loadListsFromCloud() {
-  try {
-    const snap = await getDoc(listsDocRef);
-    if (snap.exists()) {
-      const data = snap.data();
-      if (Array.isArray(data.people)) people = data.people;
-      if (Array.isArray(data.tasks))  tasks  = data.tasks;
-      console.log("☁️ Listes people/tasks chargées depuis Firestore");
-      // Miroir local pour l'offline
-      localStorage.setItem('people', JSON.stringify(people));
-      localStorage.setItem('tasks',  JSON.stringify(tasks));
-      return true;
-    }
-  } catch (err) {
-    console.warn("⚠️ loadListsFromCloud: impossible de lire Firestore:", err);
-  }
-  return false;
-}
+        async function loadListsFromCloud() {
+            try {
+                const snap = await getDoc(listsDocRef);
+                if (snap.exists()) {
+                    const data = snap.data();
+                    if (Array.isArray(data.people)) people = data.people;
+                    if (Array.isArray(data.tasks)) tasks = data.tasks;
+                    console.log("☁️ Listes people/tasks chargées depuis Firestore");
+                    localStorage.setItem('people', JSON.stringify(people));
+                    localStorage.setItem('tasks', JSON.stringify(tasks));
+                    return true;
+                }
+            } catch (err) {
+                console.warn("⚠️ loadListsFromCloud: impossible de lire Firestore:", err);
+            }
+            return false;
+        }
+
+        // === Helpers Vacances / Storage ===
+        const STORAGE_KEYS = {
+            vacations: 'vacations_by_week',
+            planning: 'planning_by_week',
+        };
+
+        function getWeekKey() { return getWeekDates().key; }
+
+        function loadVacationsFromLocal() {
+            try { const raw = localStorage.getItem(STORAGE_KEYS.vacations); return raw ? JSON.parse(raw) : {}; } catch { return {}; }
+        }
+        function saveVacationsToLocal() {
+            try { localStorage.setItem(STORAGE_KEYS.vacations, JSON.stringify(vacations)); } catch {}
+        }
+        function removeAssignmentsForPersonThisWeek(personName) {
+            document.querySelectorAll('.slot').forEach(slot => {
+                slot.querySelectorAll('.assignment').forEach(a => {
+                    const p = a.querySelector('.assignment-person')?.textContent || '';
+                    if (p === personName) a.remove();
+                });
+            });
+            savePlanning();
+        }
+
+        // === Fonction loadSavedData (appelée par initTable) ===
+        async function loadSavedData() {
+            const cloudOK = await loadListsFromCloud();
+            const sp = localStorage.getItem('people');
+            if (!cloudOK && sp) people = JSON.parse(sp);
+            const st = localStorage.getItem('tasks');
+            if (!cloudOK && st) tasks = JSON.parse(st);
+            vacations = loadVacationsFromLocal();
+        }
 
         // === Données ===
         let currentWeekOffset = 0;
@@ -300,12 +341,11 @@ async function loadListsFromCloud() {
             { name: 'Rendez-vous médical', category: 'transport' },
             { name: 'Papiers administratifs', category: 'administratif' },
         ];
-        let draggedData = null;
+        let vacations = {}; // { weekKey: { personName: true } }
+        let draggedElem = null; // pour déplacer une attribution existante
 
-        // Init
-        document.addEventListener('DOMContentLoaded', () => {
-            initTable();
-        });
+        // Init DOM
+        document.addEventListener('DOMContentLoaded', () => { initTable(); });
 
         // === Construction du tableau ===
         async function initTable() {
@@ -314,16 +354,15 @@ async function loadListsFromCloud() {
             const morningRow = document.getElementById('morningRow');
             const afternoonRow = document.getElementById('afternoonRow');
 
+            // évite la double création si re-init
+            headerRow.querySelectorAll('th:not(:first-child)').forEach(th => th.remove());
+            morningRow.querySelectorAll('td.slot').forEach(td => td.remove());
+            afternoonRow.querySelectorAll('td.slot').forEach(td => td.remove());
+
             days.forEach((day) => {
-                const th = document.createElement('th');
-                th.textContent = day;
-                headerRow.appendChild(th);
-
-                const morningTd = createSlot(day, 'morning');
-                morningRow.appendChild(morningTd);
-
-                const afternoonTd = createSlot(day, 'afternoon');
-                afternoonRow.appendChild(afternoonTd);
+                const th = document.createElement('th'); th.textContent = day; headerRow.appendChild(th);
+                const morningTd = createSlot(day, 'morning'); morningRow.appendChild(morningTd);
+                const afternoonTd = createSlot(day, 'afternoon'); afternoonRow.appendChild(afternoonTd);
             });
 
             await loadSavedData();
@@ -332,28 +371,26 @@ async function loadListsFromCloud() {
             updatePeopleList();
             updateTasksList();
             refreshModalOptions();
+            updateVacationDisplay();
         }
 
         function createSlot(day, period) {
             const td = document.createElement('td');
             td.className = 'slot';
-            td.dataset.day = day;
-            td.dataset.period = period;
-            td.ondrop = drop;
-            td.ondragover = allowDrop;
-            td.ondragleave = dragLeave;
+            td.dataset.day = day; td.dataset.period = period;
+            td.ondrop = drop; td.ondragover = allowDrop; td.ondragleave = dragLeave;
             return td;
         }
 
         // === Gestion des semaines ===
         function getWeekDates() {
             const today = new Date();
-            const currentDay = today.getDay() || 7; // Lundi=1 ... Dimanche=7
+            const currentDay = today.getDay() || 7; // 1=Lundi .. 7=Dimanche
             const monday = new Date(today);
             monday.setHours(0, 0, 0, 0);
             monday.setDate(today.getDate() - currentDay + 1 + currentWeekOffset * 7);
-            const sunday = new Date(monday);
-            sunday.setDate(monday.getDate() + 6);
+            const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
+            // Mois 0-based : garde tel quel pour la clé (stable)
             return { start: monday, end: sunday, key: `${monday.getFullYear()}-${monday.getMonth()}-${monday.getDate()}` };
         }
 
@@ -369,15 +406,18 @@ async function loadListsFromCloud() {
             savePlanning();
             currentWeekOffset += offset;
             updateWeekDisplay();
+            clearSlotsOnly();
             loadPlanning();
+            updateVacationDisplay();
+            updatePeopleList();
+            refreshModalOptions();
         }
 
-        // === Helpers DOM → objet planning ===
+        // === Helpers DOM ↔ objet planning ===
         function buildWeekPlanningFromDOM() {
             const weekPlanning = {};
             document.querySelectorAll('.slot').forEach((slot) => {
-                const day = slot.dataset.day;
-                const period = slot.dataset.period;
+                const day = slot.dataset.day; const period = slot.dataset.period;
                 const assignments = Array.from(slot.querySelectorAll('.assignment')).map((el) => {
                     const person = el.querySelector('.assignment-person').textContent;
                     const task = el.querySelector('.assignment-task').textContent;
@@ -390,318 +430,222 @@ async function loadListsFromCloud() {
             return weekPlanning;
         }
 
-        // === Persistance Firestore (avec fallback local) ===
-        async function savePlanning() {
-  const weekKey = getWeekDates().key;
-  const weekPlanning = buildWeekPlanningFromDOM();
-
-  try {
-    // Ecrit dans Firestore; merge pour éviter d’écraser d’autres champs si tu en ajoutes plus tard
-    await setDoc(doc(db, "plannings", weekKey), { data: weekPlanning }, { merge: true });
-    console.log("✅ Planning sauvegardé sur Firestore:", weekKey);
-
-    // Relire immédiatement depuis Firestore pour vérifier la synchro à l’écran
-    await loadPlanning(/*preferCloud=*/true);
-  } catch (err) {
-    console.error("❌ Erreur Firestore (savePlanning):", err);
-
-    // Gestion ciblée des erreurs
-    const code = err?.code || err?.message || '';
-    if (String(code).includes('permission-denied') || String(code).includes('appCheck') || String(code).includes('AppCheck')) {
-      alert("⚠️ Firestore refuse l'accès (permissions / App Check). Vérifie tes règles Firestore ou désactive App Check pour le test.");
-      // Pas de fallback silencieux ici : c’est un vrai problème de config.
-      return;
-    }
-
-    if (String(code).includes('unavailable') || String(code).includes('failed-precondition')) {
-      // Offline ou conflit multi-onglets => fallback local minimal
-      localStorage.setItem('planning', JSON.stringify({ [weekKey]: weekPlanning }));
-      alert("ℹ️ Hors-ligne ou conflit multi-onglets. Données sauvegardées en local. Elles seront renvoyées au cloud quand la connexion sera OK.");
-      return;
-    }
-
-    // Autre erreur non prévue
-    alert("❌ Sauvegarde impossible sur Firestore. Ouvre la console pour le détail.");
-  }
-}
-
-async function loadPlanning(preferCloud = false) {
-  const weekKey = getWeekDates().key;
-  let weekPlanning = null;
-  let triedCloud = false;
-
-  // 1) Si on préfère le cloud (après un save par ex.) on tente Firestore d’abord
-  if (preferCloud) {
-    try {
-      const snap = await getDoc(doc(db, "plannings", weekKey));
-      triedCloud = true;
-      if (snap.exists()) {
-        weekPlanning = snap.data()?.data || {};
-        console.log("☁️ Planning chargé depuis Firestore:", weekKey);
-      } else {
-        console.log("ℹ️ Aucun doc Firestore pour cette semaine:", weekKey);
-      }
-    } catch (err) {
-      console.warn("⚠️ Erreur lecture Firestore (preferCloud):", err);
-    }
-  }
-
-  // 2) Sinon, tentons Firestore par défaut (si pas déjà essayé)
-  if (!weekPlanning && !triedCloud) {
-    try {
-      const snap = await getDoc(doc(db, "plannings", weekKey));
-      if (snap.exists()) {
-        weekPlanning = snap.data()?.data || {};
-        console.log("☁️ Planning chargé depuis Firestore:", weekKey);
-      }
-    } catch (err) {
-      console.warn("⚠️ Erreur lecture Firestore:", err);
-      const code = err?.code || err?.message || '';
-      if (String(code).includes('permission-denied') || String(code).includes('appCheck') || String(code).includes('AppCheck')) {
-        alert("⚠️ Firestore refuse l'accès en lecture (permissions / App Check). Ouvre la console pour le détail.");
-      }
-    }
-  }
-
-  // 3) Fallback localStorage UNIQUEMENT si cloud impossible ET qu’on a quelque chose en local
-  if (!weekPlanning) {
-    const saved = localStorage.getItem('planning');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      weekPlanning = parsed[weekKey] || {};
-      console.log("📦 Planning chargé depuis localStorage (fallback):", weekKey);
-    } else {
-      weekPlanning = {};
-    }
-  }
-
-  // 4) Rendu DOM
-  document.querySelectorAll('.slot').forEach((slot) => {
-    slot.innerHTML = '';
-    const day = slot.dataset.day;
-    const period = slot.dataset.period;
-    if (weekPlanning[day] && weekPlanning[day][period]) {
-      weekPlanning[day][period].forEach((assignment) => {
-        addAssignmentToSlot(slot, assignment.person, assignment.task, assignment.category);
-      });
-    }
-  });
-}
-        // === Données locales (people/tasks) ===
-        async function loadSavedData() {
-  // 1) Cloud d'abord
-  const okCloud = await loadListsFromCloud();
-  if (okCloud) return;
-
-  // 2) Fallback local si le cloud n'a rien/est indispo
-  const sp = localStorage.getItem('people');
-  if (sp) people = JSON.parse(sp);
-
-  const st = localStorage.getItem('tasks');
-  if (st) tasks = JSON.parse(st);
-
-  // 3) Si on avait du local, on remonte au cloud pour rétablir la synchro
-  if (sp || st) {
-    saveListsToCloud().catch(() => {});
-  }
-}
-
-        // === UI panneaux ===
-        function togglePanel() {
-            document.getElementById('sidePanel').classList.toggle('active');
+        function renderAssignment(obj) {
+            const div = document.createElement('div');
+            div.className = `assignment task-${obj.category || 'autre'}`;
+            div.draggable = true;
+            div.addEventListener('dragstart', (e) => { draggedElem = div; div.classList.add('dragging'); });
+            div.addEventListener('dragend', () => { draggedElem = null; div.classList.remove('dragging'); });
+            div.innerHTML = `
+                <span class="assignment-person">${obj.person}</span>
+                <span class="remove-btn" title="Supprimer">×</span>
+                <div class="assignment-task">${obj.task}</div>
+            `;
+            div.querySelector('.remove-btn').addEventListener('click', () => { div.remove(); savePlanning(); });
+            return div;
         }
 
-        // === People ===
+        // === Persistance planning par semaine (localStorage) ===
+        function savePlanning() {
+            const key = STORAGE_KEYS.planning + ':' + getWeekKey();
+            const data = buildWeekPlanningFromDOM();
+            try { localStorage.setItem(key, JSON.stringify(data)); } catch {}
+        }
+
+        function loadPlanning() {
+            const key = STORAGE_KEYS.planning + ':' + getWeekKey();
+            const raw = localStorage.getItem(key);
+            if (!raw) return;
+            try {
+                const data = JSON.parse(raw);
+                Object.entries(data).forEach(([day, periods]) => {
+                    Object.entries(periods).forEach(([period, list]) => {
+                        const slot = document.querySelector(`.slot[data-day="${day}"][data-period="${period}"]`);
+                        if (!slot) return;
+                        (list || []).forEach(item => {
+                            // Si la personne est en vacances cette semaine, ne pas restaurer (sécurité)
+                            const weekVac = vacations[getWeekKey()] || {};
+                            if (weekVac[item.person]) return;
+                            slot.appendChild(renderAssignment(item));
+                        });
+                    });
+                });
+            } catch {}
+        }
+
+        function clearSlotsOnly() {
+            document.querySelectorAll('.slot').forEach(slot => slot.innerHTML = '');
+        }
+
+        // === Gestion des vacances ===
+        function toggleVacation(personName) {
+            const weekKey = getWeekKey();
+            if (!vacations[weekKey]) vacations[weekKey] = {};
+            const newState = !vacations[weekKey][personName];
+            vacations[weekKey][personName] = newState;
+            saveVacationsToLocal();
+            if (newState) removeAssignmentsForPersonThisWeek(personName);
+            updatePeopleList();
+            updateVacationDisplay();
+            refreshModalOptions();
+        }
+
+        function updateVacationDisplay() {
+            const list = document.getElementById('vacationList');
+            list.innerHTML = '';
+            const weekKey = getWeekKey();
+            const weekVac = vacations[weekKey] || {};
+            const vacNames = (people || []).filter(p => weekVac[p]);
+            if (!vacNames.length) {
+                const div = document.createElement('div');
+                div.className = 'no-vacation';
+                div.textContent = 'Aucune personne en vacances cette semaine';
+                list.appendChild(div);
+                return;
+            }
+            vacNames.forEach(name => {
+                const item = document.createElement('div');
+                item.className = 'vacation-person';
+                item.innerHTML = `<span class="vacation-icon">🏖️</span><span>${name}</span>`;
+                list.appendChild(item);
+            });
+        }
+
         function updatePeopleList() {
             const container = document.getElementById('peopleContainer');
             container.innerHTML = '';
-            people.forEach((person) => {
-                const div = document.createElement('div');
-                div.className = 'person-item';
-                div.innerHTML = `<span>${person}</span><span class="delete-btn" onclick="deletePerson('${person.replace(/'/g, "\\'")}')">×</span>`;
-                div.draggable = true;
-                div.ondragstart = (e) => dragStart(e, 'person', person);
-                div.ondragend = dragEnd;
-                container.appendChild(div);
+            const weekKey = getWeekKey();
+            const weekVac = vacations[weekKey] || {};
+            (people || []).forEach(name => {
+                const wrap = document.createElement('div');
+                wrap.className = 'person-item' + (weekVac[name] ? ' on-vacation' : '');
+                const left = document.createElement('div'); left.className = 'person-item-content';
+                const label = document.createElement('div'); label.className = 'person-item-name'; label.textContent = name;
+                if (weekVac[name]) {
+                    const tag = document.createElement('span'); tag.style.marginLeft='8px'; tag.style.fontSize='0.85em'; tag.style.color='#8d6e63'; tag.textContent='(en vacances)'; label.appendChild(tag);
+                }
+                const right = document.createElement('div');
+                const cb = document.createElement('input'); cb.type='checkbox'; cb.className='vacation-checkbox'; cb.checked=!!weekVac[name]; cb.id=`vac-${name}`; cb.addEventListener('change', () => toggleVacation(name));
+                const lab = document.createElement('label'); lab.className='vacation-label'; lab.setAttribute('for', `vac-${name}`); lab.textContent='Vacances';
+                left.appendChild(label); right.appendChild(cb); right.appendChild(lab);
+                wrap.appendChild(left); wrap.appendChild(right);
+                container.appendChild(wrap);
             });
-            refreshModalOptions();
-            localStorage.setItem('people', JSON.stringify(people));
-        }
-
-        async function addPerson() {
-  const input = document.getElementById('newPersonName');
-  const name = input.value.trim();
-  if (name && !people.includes(name)) {
-    people.push(name);
-    input.value = '';
-    updatePeopleList();
-    await saveListsToCloud();
-  }
-}
-
-async function deletePerson(name) {
-  people = people.filter((p) => p !== name);
-  updatePeopleList();
-  await saveListsToCloud();
-}
-
-        // === Tasks ===
-        function updateTasksList() {
-            const container = document.getElementById('tasksContainer');
-            container.innerHTML = '';
-            tasks.forEach((task) => {
-                const div = document.createElement('div');
-                div.className = `task-item task-${task.category}`;
-                div.innerHTML = `<span>${task.name}</span><span class="delete-btn" onclick="deleteTask('${task.name.replace(/'/g, "\\'")}')">×</span>`;
-                div.draggable = true;
-                div.ondragstart = (e) => dragStart(e, 'task', task);
-                div.ondragend = dragEnd;
-                container.appendChild(div);
-            });
-            refreshModalOptions();
-            localStorage.setItem('tasks', JSON.stringify(tasks));
-        }
-
-        async function addTask() {
-  const nameInput = document.getElementById('newTaskName');
-  const catSelect = document.getElementById('newTaskCategory');
-  const name = nameInput.value.trim();
-  const category = catSelect.value;
-  if (name && !tasks.some((t) => t.name === name)) {
-    tasks.push({ name, category });
-    nameInput.value = '';
-    updateTasksList();
-    await saveListsToCloud();
-  }
-}
-
-async function deleteTask(name) {
-  tasks = tasks.filter((t) => t.name !== name);
-  updateTasksList();
-  await saveListsToCloud();
-}
-
-        function findTaskCategory(taskName) {
-            return tasks.find((t) => t.name === taskName)?.category || 'autre';
-        }
-
-        // === Drag & Drop ===
-        function dragStart(e, type, payload) {
-            draggedData = { type, payload };
-            e.dataTransfer.effectAllowed = 'move';
-            (e.target.classList && e.target.classList.add('dragging'));
-        }
-
-        function dragEnd(e) {
-            if (e.target.classList) e.target.classList.remove('dragging');
-            draggedData = null;
-        }
-
-        function allowDrop(e) { e.preventDefault(); e.currentTarget.classList.add('drag-over'); }
-        function dragLeave(e) { e.currentTarget.classList.remove('drag-over'); }
-
-        function drop(e) {
-            e.preventDefault();
-            e.currentTarget.classList.remove('drag-over');
-            if (!draggedData) return;
-            const slot = e.currentTarget;
-            const { day, period } = slot.dataset;
-            if (draggedData.type === 'person') {
-                openAssignmentModal(day, period, draggedData.payload, null);
-            } else if (draggedData.type === 'task') {
-                openAssignmentModal(day, period, null, draggedData.payload.name);
-            }
-        }
-
-        // === Attributions ===
-        function addAssignmentToSlot(slot, person, task, category) {
-            const wrap = document.createElement('div');
-            wrap.className = `assignment task-${category}`;
-            wrap.innerHTML = `
-                <span class="remove-btn" title="Supprimer" onclick="this.parentElement.remove(); savePlanning();">×</span>
-                <div class="assignment-person">${person}</div>
-                <div class="assignment-task">${task}</div>
-            `;
-            slot.appendChild(wrap);
-        }
-
-        function openAssignmentModal(day = null, period = 'morning', presetPerson = null, presetTaskName = null) {
-            refreshModalOptions();
-            const modal = document.getElementById('assignmentModal');
-            const daySel = document.getElementById('modalDay');
-            const periodSel = document.getElementById('modalPeriod');
-            const personSel = document.getElementById('modalPerson');
-            const taskSel = document.getElementById('modalTask');
-
-            if (day) daySel.value = day; // sinon garder la valeur courante
-            periodSel.value = period;
-
-            if (presetPerson && people.includes(presetPerson)) personSel.value = presetPerson;
-            if (presetTaskName && tasks.some((t) => t.name === presetTaskName)) taskSel.value = presetTaskName;
-
-            modal.classList.add('active');
-        }
-
-        function closeAssignmentModal() {
-            const modal = document.getElementById('assignmentModal');
-            modal.classList.remove('active');
         }
 
         function refreshModalOptions() {
+            const weekKey = getWeekKey();
+            const weekVac = vacations[weekKey] || {};
             const personSel = document.getElementById('modalPerson');
             const taskSel = document.getElementById('modalTask');
-            if (!personSel || !taskSel) return;
-            personSel.innerHTML = people.map((p) => `<option value="${p}">${p}</option>`).join('');
-            taskSel.innerHTML = tasks.map((t) => `<option value="${t.name}">${t.name}</option>`).join('');
+            personSel.innerHTML = '';
+            (people || []).forEach(p => { if (!weekVac[p]) { const opt=document.createElement('option'); opt.value=p; opt.textContent=p; personSel.appendChild(opt); } });
+            taskSel.innerHTML = '';
+            (tasks || []).forEach(t => { const opt=document.createElement('option'); opt.value=t.name; opt.textContent=t.name; opt.dataset.category=t.category; taskSel.appendChild(opt); });
         }
 
-        function saveAssignment() {
+        // === Panel, tâches & personnes ===
+        function togglePanel() { document.getElementById('sidePanel').classList.toggle('active'); }
+
+        function updateTasksList() {
+            const container = document.getElementById('tasksContainer');
+            container.innerHTML = '';
+            (tasks || []).forEach(t => {
+                const el = document.createElement('div');
+                el.className = `task-item task-${t.category}`;
+                el.innerHTML = `<span>${t.name}</span> <span class="delete-btn">Supprimer</span>`;
+                el.querySelector('.delete-btn').addEventListener('click', () => {
+                    tasks = tasks.filter(x => !(x.name === t.name && x.category === t.category));
+                    localStorage.setItem('tasks', JSON.stringify(tasks));
+                    saveListsToCloud();
+                    updateTasksList();
+                    refreshModalOptions();
+                });
+                container.appendChild(el);
+            });
+        }
+
+        window.addPerson = function addPerson() {
+            const inp = document.getElementById('newPersonName');
+            const name = inp.value.trim(); if (!name) return;
+            if (!people.includes(name)) people.push(name);
+            localStorage.setItem('people', JSON.stringify(people));
+            saveListsToCloud();
+            inp.value = '';
+            updatePeopleList();
+            refreshModalOptions();
+        }
+
+        window.addTask = function addTask() {
+            const name = document.getElementById('newTaskName').value.trim();
+            const category = document.getElementById('newTaskCategory').value;
+            if (!name) return;
+            tasks.push({ name, category });
+            localStorage.setItem('tasks', JSON.stringify(tasks));
+            saveListsToCloud();
+            document.getElementById('newTaskName').value = '';
+            updateTasksList();
+            refreshModalOptions();
+        }
+
+        // === Modal Attribution ===
+        window.openAssignmentModal = function openAssignmentModal() {
+            document.getElementById('assignmentModal').classList.add('active');
+            refreshModalOptions();
+        }
+        window.closeAssignmentModal = function closeAssignmentModal() {
+            document.getElementById('assignmentModal').classList.remove('active');
+        }
+
+        window.saveAssignment = function saveAssignment() {
             const day = document.getElementById('modalDay').value;
             const period = document.getElementById('modalPeriod').value;
             const person = document.getElementById('modalPerson').value;
-            const taskName = document.getElementById('modalTask').value;
-            const category = findTaskCategory(taskName);
+            const taskSel = document.getElementById('modalTask');
+            const task = taskSel.value;
+            const category = taskSel.selectedOptions[0]?.dataset?.category || 'autre';
+            const weekVac = vacations[getWeekKey()] || {};
+            if (weekVac[person]) { alert(`${person} est en vacances cette semaine.`); return; }
             const slot = document.querySelector(`.slot[data-day="${day}"][data-period="${period}"]`);
-            if (slot) {
-                addAssignmentToSlot(slot, person, taskName, category);
-                savePlanning();
-            }
+            if (!slot) return;
+            const ass = renderAssignment({ person, task, category });
+            slot.appendChild(ass);
+            savePlanning();
             closeAssignmentModal();
         }
 
-        // === Divers ===
-        function clearWeek() {
-            if (!confirm('Effacer toutes les attributions de la semaine affichée ?')) return;
-            document.querySelectorAll('.slot').forEach((slot) => (slot.innerHTML = ''));
+        // === Drag & Drop (déplacement des attributions existantes) ===
+        function allowDrop(e) { e.preventDefault(); e.currentTarget.classList.add('drag-over'); }
+        function dragLeave(e) { e.currentTarget.classList.remove('drag-over'); }
+        function drop(e) {
+            e.preventDefault();
+            const slot = e.currentTarget; slot.classList.remove('drag-over');
+            if (!draggedElem) return; // on déplace uniquement des .assignment
+            const person = draggedElem.querySelector('.assignment-person')?.textContent || '';
+            const weekVac = vacations[getWeekKey()] || {};
+            if (weekVac[person]) { alert(`${person} est en vacances cette semaine.`); return; }
+            slot.appendChild(draggedElem);
             savePlanning();
         }
 
-        function exportPlanning() {
-            // Exporte ce qui est à l’écran (pas besoin d’un état global)
-            const weekKey = getWeekDates().key;
-            const data = buildWeekPlanningFromDOM();
-            const blob = new Blob([JSON.stringify({ weekKey, data }, null, 2)], { type: 'application/json' });
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = `planning-${weekKey}.json`;
-            document.body.appendChild(a);
-            a.click();
-            URL.revokeObjectURL(a.href);
-            a.remove();
+        // === Outils ===
+        window.clearWeek = function clearWeek() {
+            if (!confirm('Effacer toutes les attributions de la semaine ?')) return;
+            clearSlotsOnly();
+            savePlanning();
         }
 
-        // Exposer les fonctions utilisées par les attributs HTML
-        window.changeWeek = changeWeek;
+        window.exportPlanning = function exportPlanning() {
+            const data = buildWeekPlanningFromDOM();
+            const blob = new Blob([JSON.stringify({ week: getWeekKey(), data }, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a'); a.href = url; a.download = `planning-${getWeekKey()}.json`; a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        // Expose quelques fonctions globales nécessaires aux boutons inline
         window.togglePanel = togglePanel;
-        window.addPerson = addPerson;
-        window.deletePerson = deletePerson;
-        window.addTask = addTask;
-        window.deleteTask = deleteTask;
-        window.openAssignmentModal = openAssignmentModal;
-        window.closeAssignmentModal = closeAssignmentModal;
-        window.saveAssignment = saveAssignment;
-        window.clearWeek = clearWeek;
-        window.exportPlanning = exportPlanning;
+        window.changeWeek = changeWeek;
     </script>
 </body>
 </html>
