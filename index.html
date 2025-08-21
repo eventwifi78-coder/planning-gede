@@ -251,7 +251,7 @@
     <script type="module">
         // Firebase
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
-        import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyA2MjMWssWKh74NIru2wAvR3rPZ6eFH854",
@@ -265,7 +265,45 @@
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
         const listsDocRef = doc(db, "plannings_meta", "lists");
+// --- Planning hebdo (un doc par semaine) ---
+function planningDocRef(weekKey) {
+  return doc(db, "plannings", weekKey);
+}
+let unsubscribePlanning = null;
 
+function renderWeekFromData(weekData) {
+  // vide les slots puis rend tout
+  clearSlotsOnly();
+  if (!weekData) return;
+  Object.entries(weekData).forEach(([day, periods]) => {
+    Object.entries(periods).forEach(([period, list]) => {
+      const slot = document.querySelector(`.slot[data-day="${day}"][data-period="${period}"]`);
+      if (!slot) return;
+      (list || []).forEach(item => {
+        // si personne en vacances côté client, on n'affiche pas (sécurité)
+        const weekVac = vacations[getWeekKey()] || {};
+        if (weekVac[item.person]) return;
+        slot.appendChild(renderAssignment(item));
+      });
+    });
+  });
+}
+
+function subscribeToWeekPlanning() {
+  const ref = planningDocRef(getWeekKey());
+  if (unsubscribePlanning) { unsubscribePlanning(); unsubscribePlanning = null; }
+  unsubscribePlanning = onSnapshot(ref, (snap) => {
+    if (snap.exists()) {
+      const payload = snap.data();
+      renderWeekFromData(payload?.data || {});
+    } else {
+      // aucune donnée cloud pour cette semaine -> on garde l'affichage actuel/local
+      clearSlotsOnly();
+    }
+  }, (err) => {
+    console.warn("onSnapshot planning error:", err);
+  });
+}
         async function saveListsToCloud() {
             try {
                 await setDoc(listsDocRef, { people, tasks }, { merge: true });
@@ -292,7 +330,25 @@
             }
             return false;
         }
-
+let unsubscribeLists = null;
+function subscribeToLists() {
+  if (unsubscribeLists) { unsubscribeLists(); unsubscribeLists = null; }
+  unsubscribeLists = onSnapshot(listsDocRef, (snap) => {
+    if (!snap.exists()) return;
+    const data = snap.data() || {};
+    if (Array.isArray(data.people)) {
+      people = data.people;
+      localStorage.setItem('people', JSON.stringify(people));
+    }
+    if (Array.isArray(data.tasks)) {
+      tasks = data.tasks;
+      localStorage.setItem('tasks', JSON.stringify(tasks));
+    }
+    updatePeopleList();
+    updateTasksList();
+    refreshModalOptions();
+  }, (err) => console.warn("onSnapshot lists error:", err));
+}
         // === Helpers Vacances / Storage ===
         const STORAGE_KEYS = {
             vacations: 'vacations_by_week',
@@ -367,11 +423,13 @@
 
             await loadSavedData();
             updateWeekDisplay();
-            loadPlanning();
+            loadPlanning();            // fallback local immédiat
+subscribeToWeekPlanning(); // puis écoute temps réel cloud
             updatePeopleList();
             updateTasksList();
             refreshModalOptions();
             updateVacationDisplay();
+            subscribeToLists();
         }
 
         function createSlot(day, period) {
@@ -403,15 +461,16 @@
         }
 
         function changeWeek(offset) {
-            savePlanning();
-            currentWeekOffset += offset;
-            updateWeekDisplay();
-            clearSlotsOnly();
-            loadPlanning();
-            updateVacationDisplay();
-            updatePeopleList();
-            refreshModalOptions();
-        }
+  savePlanning();            // sauvegarde la semaine courante
+  currentWeekOffset += offset;
+  updateWeekDisplay();
+  clearSlotsOnly();
+  loadPlanning();            // fallback local
+  subscribeToWeekPlanning(); // écoute du nouveau doc Firestore
+  updateVacationDisplay();
+  updatePeopleList();
+  refreshModalOptions();
+}
 
         // === Helpers DOM ↔ objet planning ===
         function buildWeekPlanningFromDOM() {
@@ -446,32 +505,32 @@
         }
 
         // === Persistance planning par semaine (localStorage) ===
-        function savePlanning() {
-            const key = STORAGE_KEYS.planning + ':' + getWeekKey();
-            const data = buildWeekPlanningFromDOM();
-            try { localStorage.setItem(key, JSON.stringify(data)); } catch {}
-        }
+        async function savePlanning() {
+  const key = STORAGE_KEYS.planning + ':' + getWeekKey();
+  const data = buildWeekPlanningFromDOM();
+  // local (fallback)
+  try { localStorage.setItem(key, JSON.stringify(data)); } catch {}
+
+  // cloud (temps réel inter-appareils)
+  try {
+    await setDoc(planningDocRef(getWeekKey()), {
+      data,
+      updatedAt: Date.now()
+    }, { merge: true });
+  } catch (e) {
+    console.warn("savePlanning -> Firestore KO, reste local:", e);
+  }
+}
 
         function loadPlanning() {
-            const key = STORAGE_KEYS.planning + ':' + getWeekKey();
-            const raw = localStorage.getItem(key);
-            if (!raw) return;
-            try {
-                const data = JSON.parse(raw);
-                Object.entries(data).forEach(([day, periods]) => {
-                    Object.entries(periods).forEach(([period, list]) => {
-                        const slot = document.querySelector(`.slot[data-day="${day}"][data-period="${period}"]`);
-                        if (!slot) return;
-                        (list || []).forEach(item => {
-                            // Si la personne est en vacances cette semaine, ne pas restaurer (sécurité)
-                            const weekVac = vacations[getWeekKey()] || {};
-                            if (weekVac[item.person]) return;
-                            slot.appendChild(renderAssignment(item));
-                        });
-                    });
-                });
-            } catch {}
-        }
+  const key = STORAGE_KEYS.planning + ':' + getWeekKey();
+  const raw = localStorage.getItem(key);
+  if (!raw) return;
+  try {
+    const data = JSON.parse(raw);
+    renderWeekFromData(data);
+  } catch {}
+}
 
         function clearSlotsOnly() {
             document.querySelectorAll('.slot').forEach(slot => slot.innerHTML = '');
