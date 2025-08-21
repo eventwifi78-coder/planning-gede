@@ -134,6 +134,16 @@
             .modal-content { padding: 20px; }
             .vacation-list { flex-direction: column; }
         }
+        .icon-btn {
+  border: none; background: transparent; cursor: pointer;
+  font-size: 14px; padding: 6px; border-radius: 6px;
+}
+.icon-btn:hover { background: rgba(0,0,0,0.06); }
+.item-actions { display: flex; gap: 6px; align-items: center; }
+.inline-edit {
+  width: 100%; padding: 6px 8px; border: 2px solid #e0e0e0; border-radius: 8px;
+}
+.inline-edit:focus { outline: none; border-color: #667eea; }
     </style>
 </head>
 <body>
@@ -387,7 +397,63 @@ function subscribeToLists() {
             });
             savePlanning();
         }
+// --- Renommer une personne partout (liste + attributions DOM + Firestore) ---
+function renamePerson(oldName, newName) {
+  const trimmed = (newName || '').trim();
+  if (!trimmed) return;
+  if (people.includes(trimmed)) return; // évite doublon
 
+  // 1) Liste people
+  const idx = people.indexOf(oldName);
+  if (idx >= 0) people[idx] = trimmed;
+
+  // 2) Mettre à jour toutes les attributions visibles cette semaine
+  document.querySelectorAll('.assignment .assignment-person').forEach(el => {
+    if (el.textContent === oldName) el.textContent = trimmed;
+  });
+
+  // 3) Sauvegardes
+  localStorage.setItem('people', JSON.stringify(people));
+  saveListsToCloud();
+  savePlanning(); // pousse la version corrigée vers Firestore pour cette semaine
+
+  // 4) Vacances : renomme la clé si cochée pour la semaine
+  const wk = getWeekKey();
+  if (vacations[wk]?.[oldName]) {
+    vacations[wk][trimmed] = vacations[wk][oldName];
+    delete vacations[wk][oldName];
+    saveVacationsToLocal();
+  }
+
+  // 5) UI
+  updatePeopleList();
+  refreshModalOptions();
+  updateVacationDisplay();
+}
+
+// --- Renommer une tâche partout (liste + attributions DOM + Firestore) ---
+function renameTask(oldTaskName, newTaskName) {
+  const trimmed = (newTaskName || '').trim();
+  if (!trimmed) return;
+
+  // 1) Liste tasks (garde la catégorie d’origine)
+  const t = tasks.find(x => x.name === oldTaskName);
+  if (t) t.name = trimmed;
+
+  // 2) Mettre à jour toutes les attributions visibles cette semaine
+  document.querySelectorAll('.assignment .assignment-task').forEach(el => {
+    if (el.textContent === oldTaskName) el.textContent = trimmed;
+  });
+
+  // 3) Sauvegardes
+  localStorage.setItem('tasks', JSON.stringify(tasks));
+  saveListsToCloud();
+  savePlanning(); // pousse la version corrigée vers Firestore pour cette semaine
+
+  // 4) UI
+  updateTasksList();
+  refreshModalOptions();
+}
         // === Fonction loadSavedData (appelée par initTable) ===
         async function loadSavedData() {
             const cloudOK = await loadListsFromCloud();
@@ -595,26 +661,96 @@ subscribeToWeekPlanning(); // puis écoute temps réel cloud
         }
 
         function updatePeopleList() {
-            const container = document.getElementById('peopleContainer');
-            container.innerHTML = '';
-            const weekKey = getWeekKey();
-            const weekVac = vacations[weekKey] || {};
-            (people || []).forEach(name => {
-                const wrap = document.createElement('div');
-                wrap.className = 'person-item' + (weekVac[name] ? ' on-vacation' : '');
-                const left = document.createElement('div'); left.className = 'person-item-content';
-                const label = document.createElement('div'); label.className = 'person-item-name'; label.textContent = name;
-                if (weekVac[name]) {
-                    const tag = document.createElement('span'); tag.style.marginLeft='8px'; tag.style.fontSize='0.85em'; tag.style.color='#8d6e63'; tag.textContent='(en vacances)'; label.appendChild(tag);
-                }
-                const right = document.createElement('div');
-                const cb = document.createElement('input'); cb.type='checkbox'; cb.className='vacation-checkbox'; cb.checked=!!weekVac[name]; cb.id=`vac-${name}`; cb.addEventListener('change', () => toggleVacation(name));
-                const lab = document.createElement('label'); lab.className='vacation-label'; lab.setAttribute('for', `vac-${name}`); lab.textContent='Vacances';
-                left.appendChild(label); right.appendChild(cb); right.appendChild(lab);
-                wrap.appendChild(left); wrap.appendChild(right);
-                container.appendChild(wrap);
-            });
+  const container = document.getElementById('peopleContainer');
+  container.innerHTML = '';
+  const weekKey = getWeekKey();
+  const weekVac = vacations[weekKey] || {};
+
+  (people || []).forEach(name => {
+    const wrap = document.createElement('div');
+    wrap.className = 'person-item' + (weekVac[name] ? ' on-vacation' : '');
+
+    const left = document.createElement('div');
+    left.className = 'person-item-content';
+
+    // Nom (label) ou input en mode édition
+    const nameBox = document.createElement('div');
+    nameBox.style.display = 'flex';
+    nameBox.style.alignItems = 'center';
+    nameBox.style.gap = '8px';
+    nameBox.style.flex = '1';
+
+    const nameLabel = document.createElement('div');
+    nameLabel.className = 'person-item-name';
+    nameLabel.textContent = name;
+
+    if (weekVac[name]) {
+      const tag = document.createElement('span');
+      tag.style.marginLeft = '8px';
+      tag.style.fontSize = '0.85em';
+      tag.style.color = '#8d6e63';
+      tag.textContent = '(en vacances)';
+      nameLabel.appendChild(tag);
+    }
+
+    nameBox.appendChild(nameLabel);
+
+    const right = document.createElement('div');
+    right.className = 'item-actions';
+
+    // Checkbox vacances
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'vacation-checkbox';
+    cb.checked = !!weekVac[name];
+    cb.id = `vac-${name}`;
+    cb.addEventListener('change', () => toggleVacation(name));
+
+    const lab = document.createElement('label');
+    lab.className = 'vacation-label';
+    lab.setAttribute('for', `vac-${name}`);
+    lab.textContent = 'Vacances';
+
+    // Bouton Éditer
+    const editBtn = document.createElement('button');
+    editBtn.className = 'icon-btn';
+    editBtn.title = 'Renommer';
+    editBtn.innerText = '✏️';
+
+    editBtn.addEventListener('click', () => {
+      // Remplacer le label par un input
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.value = name;
+      input.className = 'inline-edit';
+      nameBox.replaceChild(input, nameLabel);
+      input.focus();
+      input.select();
+
+      const commit = () => {
+        const newVal = input.value.trim();
+        nameBox.replaceChild(nameLabel, input);
+        if (newVal && newVal !== name) {
+          renamePerson(name, newVal);
         }
+      };
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') commit();
+        if (e.key === 'Escape') nameBox.replaceChild(nameLabel, input);
+      });
+      input.addEventListener('blur', commit);
+    });
+
+    left.appendChild(nameBox);
+    right.appendChild(cb);
+    right.appendChild(lab);
+    right.appendChild(editBtn);
+
+    wrap.appendChild(left);
+    wrap.appendChild(right);
+    container.appendChild(wrap);
+  });
+}
 
         function refreshModalOptions() {
             const weekKey = getWeekKey();
